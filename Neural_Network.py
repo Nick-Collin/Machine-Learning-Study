@@ -98,34 +98,3 @@ def loss(output:Vector, expected: Vector) -> float:
     return np.sum(lossvec(output, expected))
 
 
-# Input
-inputs = np.array([0.6, 0.1])
-
-# Hidden layer weights (2 perceptrons, each has 2 weights + 1 bias)
-hidden_weights = np.array([
-    [0.5, -0.6, 0.1],
-    [-0.3, 0.8, 0.2]
-])
-
-# Output layer weights (1 perceptron, takes 2 hidden outputs + 1 bias)
-output_weights = np.array([
-    [1.2, -1.1, 0.3]
-])
-
-# Expected output
-expected = [0.9]
-
-# Build network
-hidden_layer = Layer(inputs=inputs, weights=hidden_weights, num_of_perceptrons=2, activation_method="sigmoid", num="1")
-
-output_layer = Layer(inputs= np.array([0, 0]), weights=output_weights, num_of_perceptrons=1, activation_method="sigmoid", num="2")
-
-nn = NeuralNetwork(layers= [hidden_layer, output_layer])
-output = nn.forward(input_data= inputs, verbose = True)
-
-# Compute and show loss
-print("Input:              ", inputs)
-print("Final output:       ", output)
-print("Expected:           ", expected)
-print("Loss:               ", loss(output, expected))
-
