@@ -6,8 +6,8 @@ type Vector = np.ndarray
 type Matrix = np.ndarray
 
 # Xavier weight initialization
-def initialize_weights(input_size: int, num_perceptrons: int, seed: int = np.random.randint(0, 99999)) -> Matrix:
-    # Xavier initialization
+def initialize_weights(input_size: int, num_perceptrons: int, seed: int = np.random.randint(0, 999999), verbose: bool = False) -> Matrix:
+    if verbose: print(f"weights seed: {seed}")
     np.random.seed(seed=seed)
     return np.random.randn(num_perceptrons, input_size + 1) * np.sqrt(2. / input_size)
 
@@ -42,17 +42,17 @@ def activation(x: float, mode: str = "", derivative: bool = False, clip_size: in
                 return 1 / (1 + np.exp(-np.clip(x, -clip_size, clip_size)))
             
             case "tanh":
-                return np.tanh(x)
+                return np.tanh(np.clip(x, -clip_size, clip_size))
             
             case "relu":
-                return max(0.0, x)
+                return max(0.0, np.clip(x, -clip_size, clip_size))
             
             case "leaky_relu":
-                return x if x > 0 else 0.01 * x
+                return np.clip(x, -clip_size, clip_size) if np.clip(x, -clip_size, clip_size) > 0 else 0.01 * np.clip(x, -clip_size, clip_size)
 
             case _:
                 # Default activation: identity (f(x) = x)
-                return x
+                return np.clip(x, -clip_size, clip_size)
 
 # Cost function (one element)
 def cost(x: float, y: float, mode: str = "", derivative: bool = False) -> float:
@@ -124,11 +124,11 @@ class Perceptron:
             print(f"Activated output (a) = {self.a}")
         return self.a
 
-    def get_deltas(self, next: "Layer" = None, expected: float = None, verbose: bool = False) -> float:
+    def get_deltas(self, next: "Layer" = None, expected: float = None, verbose: bool = False, clip_size: float = 500) -> float:
         if next is None:
             # If there's no "next", we are at the output layer
             # Delta = cost derivative * activation derivative
-            delta = cost(self.a, expected, derivative=True) * activation(self.z, mode=self.activation_method, derivative=True)
+            delta = cost(self.a, expected, derivative=True) * activation(self.z, mode=self.activation_method, derivative=True, clip_size= clip_size)
             if verbose:
                 print(f"Perceptron {self.num} in Layer {self.layer} (Output Layer) - Delta: {delta}")
         else:
@@ -169,7 +169,7 @@ class Layer:
             h = Perceptron(self.num, f"{k}", activation_method=self.activation_method)
             self.perceptrons.append(h)
 
-    def get_out(self, verbose: bool = False, clip_size: int = 500) -> Vector:
+    def get_out(self, verbose: bool = False, clip_size: float = 500) -> Vector:
         out = []
         k = 0
         for perceptron in self.perceptrons:
@@ -187,17 +187,17 @@ class Layer:
             print(f"Layer {self.num} final output: {out}")
         return np.array(out)
 
-    def get_deltas(self, next: "Layer" = None, expected: Vector = None, verbose: bool = False) -> Vector:
+    def get_deltas(self, next: "Layer" = None, expected: Vector = None, verbose: bool = False, clip_size: float = 500) -> Vector:
         deltas = []  # List to store deltas of this layer
 
         if next is None:
             assert expected.shape[0] == len(self.perceptrons), "Expected vector must be in the same dimension of the output vector"
             # Output layer: match each perceptron with its expected label
             for perceptron, y in zip(self.perceptrons, expected):
-                deltas.append(perceptron.get_deltas(expected=y, verbose=verbose))
+                deltas.append(perceptron.get_deltas(expected=y, verbose=verbose, clip_size= clip_size))
         else:
             for perceptron in self.perceptrons:
-                deltas.append(perceptron.get_deltas(next=next, verbose=verbose))
+                deltas.append(perceptron.get_deltas(next=next, verbose=verbose, clip_size= clip_size))
 
         self.deltas = np.array(deltas)
         return np.array(deltas)
@@ -209,18 +209,19 @@ class NeuralNetwork:
         self.layers = layers
         self.out: Vector
 
-    def forward(self, input_data: Vector, verbose: bool = False) -> Vector:
+    def forward(self, input_data: Vector, verbose: bool = False, clip_size: float = 500) -> Vector:
+        current_input = input_data
         for layer in self.layers:
-            layer.inputs = input_data
+            layer.inputs = current_input
             if verbose:
                 print(f"Forward Propagation - Layer {layer.num}: input = {input_data}")
-            input_data = layer.get_out(verbose)
-        self.out = input_data
+            current_input = layer.get_out(verbose, clip_size= clip_size)
+        self.out = current_input
         if verbose:
             print(f"Neural Network Output: {self.out}")
         return self.out
     
-    def backward(self, expected: Vector, verbose: bool = False):
+    def backward(self, expected: Vector, verbose: bool = False, clip_size: float = 500):
         next_layer = None  # No next layer yet (start from output)
 
         if verbose:
@@ -231,12 +232,12 @@ class NeuralNetwork:
                 # Output layer: use the expected outputs
                 if verbose:
                     print(f"Layer {layer.num} (Output Layer) - Computing deltas...")
-                layer.get_deltas(expected=expected, verbose=verbose)
+                layer.get_deltas(expected=expected, verbose=verbose, clip_size= clip_size)
             else:
                 # Hidden layer: use next layer's perceptrons
                 if verbose:
                     print(f"Layer {layer.num} (Hidden Layer) - Computing deltas from next layer...")
-                layer.get_deltas(next=next_layer, verbose=verbose)
+                layer.get_deltas(next=next_layer, verbose=verbose, clip_size= clip_size)
 
             # Debugging output for deltas in the current layer
             if verbose:
@@ -249,5 +250,50 @@ class NeuralNetwork:
         if verbose:
             print("Backpropagation complete.")
 
+    def train(self, input_data: Matrix, expected: Matrix, epochs: int, learning_rate: int = 1, verbose: bool = False, verbose_step: int = 1000, clip_size: float = 500, verboseplus: bool= False, alpha_update_factor: float = 0.5):
         
+        last = 0
+        for i in range(len(input_data)):
+            inputs = input_data[i]
+            expected_output = np.array([expected[i]])
+
+            # Forward pass
+            self.forward(inputs, clip_size= clip_size, verbose= verboseplus)
+
+            # Compute loss for the firt iteration
+            loss_value = loss(self.out, expected_output)
+            last += loss_value
+
+        for epoch in range(epochs):
+            total_loss = 0
+            for i in range(len(input_data)):
+                inputs = input_data[i]
+                expected_output = np.array([expected[i]])
+
+                # Forward pass
+                self.forward(inputs, clip_size= clip_size, verbose= verboseplus)
+
+                # Compute loss
+                loss_value = loss(self.out, expected_output)
+                total_loss += loss_value
+
+                # Backward pass (backpropagation)
+                self.backward(expected_output, clip_size= clip_size, verbose= verboseplus)
+
+                # Update weights using the deltas from backpropagation
+                # Simple gradient descent update
+                for layer in self.layers:
+                    for perceptron in layer.perceptrons:
+                        perceptron.weights -= learning_rate * perceptron.delta * layer.inputs
+
+            #Update learning rate
+            if total_loss > last:
+                learning_rate = learning_rate * alpha_update_factor
+            last = total_loss
+
+            # Print the loss 
+            if epoch % verbose_step == 0 and verbose:
+                print(f"Epoch {epoch}/{epochs} - Loss: {total_loss} - Alpha: {learning_rate}")
+
+                
 
