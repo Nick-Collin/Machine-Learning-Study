@@ -1,43 +1,38 @@
-import numpy as np
-from Neural_Network import *
+from Trainers import *
 
-#good seeds: 72026, 668792
+data = Dataset("Data/Xor.csv", )
 
-# Create a simple dataset (XOR problem)
-X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])  # Input data (4 samples, 2 features)
-y = np.array([0, 1, 1, 0])  # Expected output (XOR logic)
-
-# Define the architecture of the neural network
-# 2 input neurons, 2 neurons in the hidden layer, 1 output neuron
-layer1_weights = initialize_weights(2, 2, verbose= True)  
-layer2_weights = initialize_weights(2, 2, verbose= True)
-layer3_weights = initialize_weights(2, 2, verbose= True)  
-output_weights = initialize_weights(2, 1, verbose= True)
+#test: 
+"""
+seeds   -   min loss   -  epochs  - learning rate - verbose step
+668792  -   0.001936   -  10000   -       2       -     1000
+"""
+layer1_weights = initialize_weights(2, 2, seed= 668792)   
+output_weights = initialize_weights(2, 1, seed= 668792)
 
 # Create layers
-layer1 = Layer(weights=layer1_weights, num_of_perceptrons=2, activation_method="sigmoid", num="1")
-layer2 = Layer(weights=layer2_weights, num_of_perceptrons=2, activation_method="sigmoid", num="2")
-layer3 = Layer(weights=layer3_weights, num_of_perceptrons=2, activation_method="sigmoid", num="3")
-output = Layer(weights=output_weights, num_of_perceptrons=1, activation_method="sigmoid", num="4")
+layer1 = Layer(weights=layer1_weights, num_of_perceptrons=2, activation_method="relu", num="1")
+output = Layer(weights=output_weights, num_of_perceptrons=1, activation_method="relu", num="2")
 
 # Create the Neural Network
-nn = NeuralNetwork(layers=[layer1, layer2, layer3, output])
+nn = NeuralNetwork(layers=[layer1, output])
 
-# Training loop
-nn.train(X, y, 10000, verbose= True)
+trainer = Trainer(data, nn, learning_rate= 1)
+trainer.train(epochs= 10000, verbose= True, verbose_step=1000)
 
+err = 0
 # Test the trained network
 print("\nTesting the trained network:")
-for i in range(len(X)):
-    output = nn.forward(X[i])
-    print(f"Input: {X[i]} -> Predicted: {output}, Expected: {y[i]}")
+for i in range(len(data.test_data[0])):
+    output = nn.forward(data.test_data[0][i])
+    if (loss(output, data.test_data[1][i])) > 0.25: err += 1
+    print(f"Input: {data.test_data[0][i]} -> Predicted: {output}, Expected: {data.test_data[1][i]}")
 
-print("---Welcome to simple Xor NN!!---")
+print(f"Precision: {(1 - err/len(data.test_data[0])) * 100}%")
+
+print("---Welcome to simple Linear Regression NN!!---")
 while True:
     x1 = float(input("x1: "))
     x2 = float(input("x2: "))
     out = nn.forward(np.array([x1, x2]))
-    if out >= 0.5:
-        print("activated")
-    else:
-        print("not activated")
+    print(out)
