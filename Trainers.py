@@ -1,204 +1,119 @@
 """
-Training routines
+This module contains classes and methods for training neural networks.
+
+Classes:
+    Trainer: Handles the training process of a neural network.
+    Optimizer: Base class for optimization algorithms.
+    SGD: Implements the Stochastic Gradient Descent optimization algorithm.
+    PolyakMomentum: Implements the Polyak Momentum optimization algorithm.
+
+Methods:
+    Trainer.train(dataset: Dataset): Trains the neural network using the provided dataset.
+    Optimizer.update(layer: Layer, learning_rate: float): Updates the weights of a layer based on the optimization algorithm.
 """
 
-from Neural_Network import * 
+from Neural_Network import *
+import logging
 
-class Dataset:
-    def __init__(self, 
-                 path: str = "", 
-                 val_ratio:float = 0.1, 
-                 train_ratio: float = 0.8, 
-                 verbose: bool = False):
-        
-        self.val_ratio, self.train_ratio = val_ratio, train_ratio
-        self.data, self.labels = self.load_data(path)
-        if verbose: print(f"Loaded:\n Data:\n {self.data}\n Labels:\n {self.labels}")
-        self.train_data, self.validation_data, self.test_data = self.split_data()
-        if verbose: print(f"Splited:\n Training:\n {self.train_data}\n Testing:\n {self.test_data}")
+# Setup logging
+logger = logging.getLogger("Trainer")
 
-    def load_data(self, path):
-        # Load from CSV, image folder, etc.
-        
-        if path.endswith(".csv"):
-            from csv import reader
-            data = []
-            labels = []
+class Optimizer:
+    """
+    Base class for optimization algorithms.
 
-            with open(path, newline='') as file:
-                csv_reader = reader(file)
+    Methods:
+        update(layer: Layer, learning_rate: float): Updates the weights of a layer based on the optimization algorithm.
+    """
+    def update(self, layer: Layer, learning_rate: float):
+        #TODO Validate that the layer and learning_rate are valid inputs
+        #TODO Add error handling for invalid layer attributes
+        raise NotImplementedError("This method should be implemented by subclasses!")
+    
+class SGD(Optimizer):
+    """
+    Implements the Stochastic Gradient Descent optimization algorithm.
 
-                header = next(csv_reader)  # First line: column names
-                outsize = sum(1 for col in header if col.startswith("out"))
+    Methods:
+        update(layer: Layer, learning_rate: float): Updates the weights of a layer using SGD.
+    """
+    def update(self, layer:Layer, learning_rate: float):
+        layer.weights -= learning_rate * layer.gradient
 
-                for row in csv_reader:
-                    # Convert to floats
-                    row = [float(x) for x in row]
+class PolyakMomentum(Optimizer):
+    """
+    Implements the Polyak Momentum optimization algorithm.
 
-                    # Features are all but last `outsize` elements
-                    features = row[:-outsize]
-                    label = row[-outsize:]  # now a list of outputs
+    Methods:
+        update(layer: Layer, learning_rate: float): Updates the weights of a layer using Polyak Momentum.
+    """
+    def __init__(self):
+        pass #TODO
 
-                    data.append(features)
-                    labels.append(label)
-            return np.array(data), np.array(labels)
-
-        elif path.endswith(".json"):
-            from json import load
-            with open(path, 'r') as file:
-                dataset = load(file)
-
-            data = [item['features'] for item in dataset]
-            labels = [item['label'] for item in dataset]
-            return np.array(data), np.array(labels)
-
-        else: print("Invalid path extension")
-
-    def split_data(self):
-        # Shuffle the data
-        indices = np.arange(len(self.data))
-        np.random.shuffle(indices)
-        data = self.data[indices]
-        labels = self.labels[indices]
-
-        # Calculate split points
-        total = len(self.data)
-        train_end = int(total * self.train_ratio)
-        val_end = int(total * (self.train_ratio + self.val_ratio))
-
-        # Split the data
-        train_data, train_labels = self.data[:train_end], self.labels[:train_end]
-        val_data, val_labels = self.data[train_end:val_end], self.labels[train_end:val_end]
-        test_data, test_labels = self.data[val_end:], self.labels[val_end:]
-
-        return (train_data, train_labels), (val_data, val_labels), (test_data, test_labels)
-
+    def update(self, layer: Layer, learning_rate: float):
+        #TODO Validate that the layer and learning_rate are valid inputs
+        #TODO Add error handling for invalid layer attributes
+        pass #TODO
+    
+    
 class Trainer:
-    def __init__(self, 
-                 dataset: Dataset, 
-                 nn: NeuralNetwork, 
-                 learning_rate: int = 1):
+    """
+    Handles the training process of a neural network.
+
+    Attributes:
+        nn (NeuralNetwork): The neural network to be trained.
+        optimizer (Optimizer): The optimization algorithm to use.
+        learning_rate (float): The learning rate for training.
+        epochs (int): The number of training epochs.
+        batches (Data): The data batches for training.
+
+    Methods:
+        train(dataset: Dataset): Trains the neural network using the provided dataset.
+    """
+    def __init__(self,
+                 nn: NeuralNetwork,
+                 optimizer: Optimizer,
+                 epochs: int,
+                 learning_rate: float): 
         
-        self.learning_rate = learning_rate
-        self.nn = nn
-        self.dataset = dataset
+        #TODO Assert args are valid
 
-    def train(self, 
-              epochs:int = 50, 
-              verbose: bool = False, 
-              verbose_step: int = 1000, 
-              clip_size: float = 500, 
-              loss_mode: str = "MSE"):
-            
-            last = 0
-            for i in range(len(self.dataset.train_data[0])):
-                inputs = self.dataset.train_data[0][i]
-                expected_outputs = self.dataset.train_data[1][i]
-
-                # Forward pass
-                self.nn.forward(inputs, clip_size= clip_size)
-
-                # Compute loss for the firt iteration
-                loss_value = loss(self.nn.out, expected_outputs, mode= loss_mode)
-                last += loss_value
-
-            for epoch in range(epochs):
-                total_loss = 0
-                for i in range(len(self.dataset.train_data[0])):
-                    inputs = self.dataset.train_data[0][i]
-                    expected_outputs = self.dataset.train_data[1][i]
-
-                    # Forward pass
-                    self.nn.forward(inputs, clip_size= clip_size)
-
-                    # Compute loss
-                    loss_value = loss(self.nn.out, expected_outputs, loss_mode)
-                    total_loss += loss_value
-
-                    # Backward pass (backpropagation)
-                    self.nn.backward(expected_outputs, clip_size= clip_size)
-
-                    # Update weights using the deltas from backpropagation
-                    # Simple gradient descent update
-                    for layer in self.nn.layers:
-                        for perceptron in layer.perceptrons:
-                            #For the weights itself
-                            perceptron.weights -= self.learning_rate * perceptron.delta * layer.inputs
-                            #For the bias therm
-                            perceptron.bias -= self.learning_rate * perceptron.delta 
-
-
-                # Print the loss 
-                if epoch % verbose_step == 0 and verbose:
-                    print(f"Epoch {epoch}/{epochs} - Loss: {total_loss} - Alpha: {self.learning_rate}")
-
-class SDG_Dinamic_Alpha(Trainer):
-    '''
-    Updates alpha by multiplying it by a factor, if L' > L
-    '''
-
-    def __init__(self, 
-                 dataset: Dataset, 
-                 nn: NeuralNetwork, 
-                 learning_rate: int = 1, 
-                 alpha_update_factor: float = 0.5):
+        self.nn: NeuralNetwork = nn
+        self.optimizer: Optimizer = optimizer
+        self.learning_rate: float = learning_rate
+        self.epochs: int = epochs
+        self.dataset: Dataset = nn.dataset
         
-        super().__init__(dataset=dataset, nn=nn, learning_rate= learning_rate)
-        self.alpha_update_factor = alpha_update_factor
+    
+    def train(self,
+              batched: bool = True,
+              batch_size: int = 32,
+              shuffle: bool = True):
 
+        if batched and not self.dataset.batches:
+            self.dataset.split_batches(batch_size, shuffle)
 
-    def train(self, 
-              epochs:int = 50, 
-              verbose: bool = False, 
-              verbose_step: int = 1000, 
-              clip_size: float = 500, 
-              loss_mode: str = "MSE"):
-            
-            last = 0
-            for i in range(len(self.dataset.train_data[0])):
-                inputs = self.dataset.train_data[0][i]
-                expected_outputs = self.dataset.train_data[1][i]
+        for epoch in range(self.epochs):
+            logger.info(f"Starting epoch {epoch + 1}/{self.epochs}")
+            if batched:
+                for batch in self.dataset.batches:
+                    self.train_step(batch.features, batch.labels)
 
-                # Forward pass
-                self.nn.forward(inputs, clip_size= clip_size)
+            else:
+                self.train_step(self.dataset.training.features, self.dataset.training.labels)
 
-                # Compute loss for the firt iteration
-                loss_value = loss(self.nn.out, expected_outputs, mode= loss_mode)
-                last += loss_value
+    def train_step(self, 
+                    features: Vector,    
+                    labels: Vector):
+        
+        # Validate features and labels
+        if not is_tensor(features) or not is_vector(labels):
+            logger.error("Invalid features or labels for training step.")
+            raise ValueError("Features must be a tensor and labels must be a vector.")
 
-            for epoch in range(epochs):
-                total_loss = 0
-                for i in range(len(self.dataset.train_data[0])):
-                    inputs = self.dataset.train_data[0][i]
-                    expected_outputs = self.dataset.train_data[1][i]
-
-                    # Forward pass
-                    self.nn.forward(inputs, clip_size= clip_size)
-
-                    # Compute loss
-                    loss_value = loss(self.nn.out, expected_outputs, mode= loss_mode)
-                    total_loss += loss_value
-
-                    # Backward pass (backpropagation)
-                    self.nn.backward(expected_outputs, clip_size= clip_size)
-
-                    # Update weights using the deltas from backpropagation
-                    # Simple gradient descent update
-                    for layer in self.nn.layers:
-                        for perceptron in layer.perceptrons:
-                            #For the weights itself
-                            perceptron.weights -= self.learning_rate * perceptron.delta * layer.inputs
-                            #For the bias therm
-                            perceptron.bias -= self.learning_rate * perceptron.delta 
-
-                #Update learning rate
-                if total_loss > last:
-                    self.learning_rate = self.learning_rate * self.alpha_update_factor
-                last = total_loss
-
-                # Print the loss 
-                if epoch % verbose_step == 0 and verbose:
-                    print(f"Epoch {epoch}/{epochs} - Loss: {total_loss} - Alpha: {self.learning_rate}")
-
-
-
+        for feature, label, in zip(features, labels):
+            self.nn.propagate_forward(feature)
+            self.nn.propagate_backward(label)
+            for layer in self.nn.layers:
+                self.optimizer.update(layer, self.learning_rate)
+                logger.debug(f"Updated weights for layer {layer.idx}")

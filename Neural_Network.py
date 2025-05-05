@@ -1,160 +1,205 @@
+"""
+This module contains the classes and functions that define a Neural Network.
+
+Classes:
+    NeuralNetwork: Represents a neural network composed of multiple layers, capable of forward and backward propagation.
+    Layer: Represents a layer in a neural network, containing perceptrons, weights, and biases.
+
+Methods:
+    NeuralNetwork.propagate_forward(inputs: Vector) -> Vector: Performs forward propagation through all layers of the network.
+    NeuralNetwork.propagate_backward(): Performs backward propagation through all layers of the network.
+    Layer.forward_pass(inputs: Vector) -> Vector: Computes the output of the layer by calculating the output of each perceptron.
+    Layer.get_gradient(next: Layer) -> Matrix: Computes the gradient of the layer for backpropagation.
+"""
+
+# Imports
 from Util import *
 
-# Defining a perceptron
-class Perceptron:
-    def __init__(self, layer: str = "not provided", num: str = "not provided", activation_method: str = "Linear", verbose: bool = False):
-        # Debug only
-        self.layer = layer
-        self.num = int(num)
-        self.activation_method = activation_method
-        self.verbose = verbose
+class NeuralNetwork:
+    """
+    Represents a neural network, which is composed of multiple layers and is capable of performing forward and backward propagation.
 
-    def activate(self, inputs: Vector, weights: Vector, bias: float, clip_size: int = 500) -> float:
-        assert isinstance(inputs, np.ndarray), f"expected a input vector at layer: {self.layer}, perceptron: {self.num}"
-        assert isinstance(weights, np.ndarray), f"expected a weight vector at layer: {self.layer}, perceptron: {self.num}"
-        assert inputs.ndim == 1, "Inputs must be a vector"
-        assert weights.ndim == 1, "Weights must be a vector"
-        assert inputs.shape == weights.shape, "Inputs and weights mismatch shapes"
+    Attributes:
+        layers (list[Layer]): A list of layers that make up the neural network.
 
-        self.weights, self.bias = weights, bias
-        self.z = np.dot(inputs, weights) + bias
-        if self.verbose:
-            print(f"Perceptron {self.num} in Layer {self.layer}: inputs({inputs}), weights({weights}), bias({bias})")
-            print(f"Sum (z) = {self.z}, dot product = {np.dot(inputs, weights)}")
+    Methods:
+        propagate_forward(inputs: Vector) -> Vector:
+            Performs forward propagation through all layers of the network.
+        propagate_backward():
+            Performs backward propagation through all layers of the network.
+    """
 
-        self.a = activation(self.z, mode=self.activation_method, clip_size= clip_size)
-        if self.verbose:
-            print(f"Activated output (a) = {self.a}")
+
+    def __init__(self, 
+                 dataset: Dataset,
+                 layers: list["Layer"], 
+                 loss_func: str = "MSE"):
+        """
+        Initializes the NeuralNetwork with a list of layers and a specified loss function.
+
+        Args:
+            layers (list[Layer]): A list of layers that make up the neural network.
+            loss_func (str): The loss function to use for training (default is "MSE").
+        """
+
+        self.layers: list[Layer] = layers
+        self.loss_func: str = loss_func
+        self.dataset: Dataset = dataset
+
+        for idx, layer in enumerate(self.layers):
+            layer.parent_nn = self
+            layer.idx = idx
+            
+            if layer.weights == None:
+                layer.initialize_weights(mode= layer.initialization_mode)
+
+    def propagate_forward(self, inputs: Vector) -> Vector:
+        """
+        Perform forward propagation through all layers of the network.
+
+        Args:
+            inputs (Vector): The input vector to the network.
+
+        Returns:
+            Vector: The output vector after forward propagation.
+        """
+
+        #TODO Validate that the inputs are valid numpy arrays
+        for layer in self.layers:
+            inputs = layer.forward_pass(inputs)
+
+        return inputs
+    
+    def propagate_backward(self, expected: Vector):
+        """
+        Perform backward propagation through all layers of the network.
+        """
+        self.layers[-1].deltas = cost(x= self.layers[-1].a, y= expected, derivative= True, mode= self.loss_func)
+        for layer in reversed(self.layers[:-1]):
+            layer.get_gradient(next= self.layers[layer.idx + 1])
+
+
+class Layer:
+    """
+    Represents a layer in a neural network, which contains multiple perceptrons and their associated weights.
+
+    Attributes:
+        weights (Matrix): The weights connecting neurons in this layer to the previous layer.
+        bias (float): The bias term added to the weighted sum of inputs.
+        parent_nn (NeuralNetwork): The neural network to which this layer belongs.
+        idx (int): The identifier number of this layer in its parent neural network.
+        gradient (Matrix): The gradient of the layer for backpropagation.
+
+    Methods:
+        forward_pass(inputs: Vector) -> Vector:
+            Computes the output of the layer by applying weights, bias, and activation function.
+        get_gradient(next: Layer) -> Matrix:
+            Computes the gradient of the layer for backpropagation.
+    """
+
+
+    def __init__(self, 
+                 num_of_units: int,
+                 activation_mode: str= "sigmoid",
+                 weights: Matrix= None,
+                 bias: Vector= None,
+                 initialization_mode: str= "Xavier"):
+        """
+        Initializes the Layer with weights, bias, and metadata.
+        """
+
+        # TODO Assert self.weights is a 2D Numpy array and it does not have any invalid value in it. self.z, self.deltas and self.a are vectors
+        #TODO Add error handling for invalid layer attributes
+        
+        self.parent_nn: NeuralNetwork
+        self.idx: int
+        self.z: Vector
+        self.a: Vector
+        self.deltas: Vector
+        self.gradient: Matrix 
+        self.inputs = Vector
+        self.num_of_units = num_of_units
+        self.initialization_mode = initialization_mode
+        self.weights: Matrix = None
+        if weights is not None:
+            self.weights: Matrix = weights 
+
+        self.bias = bias if bias is not None else np.zeros(num_of_units)
+        self.activation_mode: str = activation_mode
+
+    def initialize_weights(self, mode: str = "Xavier"):
+        """
+        Initialize weights using the specified mode.
+        Supported modes: "Xavier", "XavierNormal", "He", "HeNormal"
+        """
+
+        if self.idx == 0:
+            # Assuming input features dimension is inferred from the dataset
+            # Get one sample's feature size from the parent dataset
+            sample_input = self.parent_nn.dataset.training.features[0]
+            previous_layer_units = sample_input.shape[0]
+
+        n_out, n_in = self.weights.shape
+
+        if mode == "Xavier":
+            limit = np.sqrt(6 / (n_in + n_out))
+            self.weights = np.random.uniform(-limit, limit, size=(n_out, n_in))
+
+        elif mode == "XavierNormal":
+            std = np.sqrt(2 / (n_in + n_out))
+            self.weights = np.random.normal(0, std, size=(n_out, n_in))
+
+        elif mode == "He":
+            limit = np.sqrt(6 / n_in)
+            self.weights = np.random.uniform(-limit, limit, size=(n_out, n_in))
+
+        elif mode == "HeNormal":
+            std = np.sqrt(2 / n_in)
+            self.weights = np.random.normal(0, std, size=(n_out, n_in))
+
+        else:
+            raise ValueError(f"Unknown initialization mode: {mode}")
+
+        # Bias can be zero or small noise
+        self.bias = np.zeros(n_out)
+
+
+
+    def forward_pass(self, inputs: Vector) -> Vector:
+        """
+        Compute the output of the layer by applying weights, bias, and activation function.
+
+        Args:
+            inputs (Vector): The input vector to the layer.
+
+        Returns:
+            Vector: The output vector after applying weights, bias, and activation function.
+        """
+        self.z = np.dot(self.weights, inputs) + self.bias
+        self.a = activation(self.z)
+        self.inputs = inputs #save it for gradient calculation
+
         return self.a
 
-    def get_deltas(self, next: "Layer" = None, expected: float = None, clip_size: float = 500) -> float:
-        if next is None:
-            # If there's no "next", we are at the output layer
-            # Delta = cost derivative * activation derivative
-            delta = cost(self.a, expected, derivative=True) * activation(self.z, mode=self.activation_method, derivative=True, clip_size= clip_size)
-            if self.verbose:
-                print(f"Perceptron {self.num} in Layer {self.layer} (Output Layer) - Delta: {delta}")
-        else:
-            assert next.deltas.ndim == next.weights.T[self.num].ndim, f"The next Layer's deltas vector must be the same dimension as the weight's vec associated with it"
-            # If we have a next layer, we're in a hidden layer
-            # Delta = (sum of next deltas * weights) * activation derivative
-            delta = np.dot(next.deltas, next.weights.T[self.num]) * activation(self.z, mode=self.activation_method, derivative=True)
-            if self.verbose:
-                print(f"Perceptron {self.num} in Layer {self.layer} (Hidden Layer) - Delta: {delta}")
-        
-        # Save delta for future use
-        self.delta = delta
-        return delta
 
+    def get_gradient(self, next: "Layer") -> Matrix:
+        """
+        Compute the gradient of the layer for backpropagation.
 
-# Defining a layer
-class Layer:
-    def __init__(self, weights: Matrix, num_of_perceptrons: int, activation_method: str = "", num: str = "not provided", inputs: Vector = None, verbose: bool = False):
-        if inputs is None:
-            inputs = np.zeros(weights.shape[1] - 1)  # Initialize it as zeros
-        
-        # Making sure everything was correctly initialized
-        assert isinstance(inputs, np.ndarray), f"expected a input vector at layer: {num}"
-        assert isinstance(weights, np.ndarray), f"expected a weight matrix at layer: {num}"
-        assert weights.ndim == 2, f"Expected 2D matrix weight, got {weights.ndim}D - Layer: {num}"
-        assert weights.shape[0] == num_of_perceptrons, "Number of weight rows must match number of perceptrons"
-        assert weights.shape[1] == len(inputs) + 1, f"Each weight vector must match input length + 1 for bias - Layer: {num}"
-        assert inputs.ndim == 1, f"Expected 1D Vector input, got {inputs.ndim}D Matrix - Layer: {num}"
+        Args:
+            next (Layer): The next layer in the neural network.
 
-        # Debug only
-        self.num = int(num)
-        self.inputs = inputs
-        self.weights = weights
-        self.activation_method = activation_method
-        self.perceptrons = []
-        self.verbose = verbose
+        Returns:
+            Matrix: The gradient of the layer.
+        """
+        #TODO assert next is a layer with already computed deltas and valid weights
 
-        for k in range(num_of_perceptrons):
-            if verbose: print(f"Creating perceptron {k} in layer {self.num}")
-            h = Perceptron(self.num, f"{k}", activation_method=self.activation_method, verbose= self.verbose)
-            self.perceptrons.append(h)
+        #deltas[i] represent the partial derivative of the cost in respect to self.z[i]
+        #next.weights.T[j,i] connects  this layer's neuron[j] with next layer's neuron[i]
+        #delta[j] = sum(next.weitghts(j,i) * next.deltas[i] for i in range next.weights[j]) * activation_derivatice(self.z)
+        self.deltas = np.dot(next.weights.T, next.deltas) * activation(self.z, derivative= True, mode= self.activation_mode)
 
-    def get_out(self, verbose: bool = False, clip_size: float = 500) -> Vector:
-        out = []
-        k = 0
-        for perceptron in self.perceptrons:
-            # We limit the weight vector to not include the last scalar because it represents the bias
-            # Important note: here is crucial to update the perceptron inputs, because elsewhere it would keep with the inputs set at init time before the forward propagation
-            a = perceptron.activate(inputs=self.inputs, weights=self.weights[k][:-1], bias=self.weights[k][-1], clip_size= clip_size)
-            out.append(a)
-            k += 1
-
-            # Debug
-            if verbose:
-                print(f"Layer {self.num} - Perceptron {perceptron.num}: activation = {a}, current output = {out}")
-
-        if self.verbose:
-            print(f"Layer {self.num} final output: {out}")
-        return np.array(out)
-
-    def get_deltas(self, next: "Layer" = None, expected: Vector = None, clip_size: float = 500) -> Vector:
-        deltas = []  # List to store deltas of this layer
-        if next is None:
-            assert expected.shape[0] == len(self.perceptrons), "Expected vector must be in the same dimension of the output vector"
-            # Output layer: match each perceptron with its expected label
-            for perceptron, y in zip(self.perceptrons, expected):
-                deltas.append(perceptron.get_deltas(expected=y, clip_size= clip_size))
-        else:
-            for perceptron in self.perceptrons:
-                deltas.append(perceptron.get_deltas(next=next, clip_size= clip_size))
-
-        self.deltas = np.array(deltas)
-        return np.array(deltas)
-
-
-# Defining a Neural Network
-class NeuralNetwork:
-    def __init__(self, layers: list[Layer], verbose: bool = False):
-        self.layers = layers
-        self.out: Vector
-        self.verbose = verbose
-
-    def forward(self, input_data: Vector, clip_size: float = 500) -> Vector:
-        current_input = input_data
-        for layer in self.layers:
-            layer.inputs = current_input
-            if self.verbose:
-                print(f"Forward Propagation - Layer {layer.num}: input = {input_data}")
-            current_input = layer.get_out(clip_size= clip_size)
-        self.out = current_input
-        if self.verbose:
-            print(f"Neural Network Output: {self.out}")
-        return self.out
-    
-    def backward(self, expected: Vector, clip_size: float = 500):
-        next_layer = None  # No next layer yet (start from output)
-
-        if self.verbose:
-            print(f"Starting Backpropagation with expected output: {expected}")
-            
-        for layer in reversed(self.layers):  # Process layers from output back to input
-            if next_layer is None:
-                # Output layer: use the expected outputs
-                if self.verbose:
-                    print(f"Layer {layer.num} (Output Layer) - Computing deltas...")
-                layer.get_deltas(expected=expected, clip_size= clip_size)
-            else:
-                # Hidden layer: use next layer's perceptrons
-                if self.verbose:
-                    print(f"Layer {layer.num} (Hidden Layer) - Computing deltas from next layer...")
-                layer.get_deltas(next=next_layer, clip_size= clip_size)
-
-            # Debugging output for deltas in the current layer
-            if self.verbose:
-                deltas = np.array([p.delta for p in layer.perceptrons])
-                print(f"Layer {layer.num} - Deltas: {deltas}")
-
-            # Move one layer backward
-            next_layer = layer
-
-        if self.verbose:
-            print("Backpropagation complete.")
-
- 
-                
+        #TODO assert inputs and deltas are valid
+        self.gradient = np.outer(self.inputs, self.deltas)
+        return self.gradient
 

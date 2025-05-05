@@ -1,38 +1,50 @@
-from Trainers import *
-
-data = Dataset("Data/Xor.csv", )
-
-#test: 
 """
-seeds   -   min loss   -  epochs  - learning rate - verbose step
-668792  -   0.001936   -  10000   -       2       -     1000
+Main module for the Machine Learning project.
+
+This module serves as the entry point for the project. It is responsible for initializing and orchestrating the various components of the project, such as loading datasets, training models, and evaluating results.
+
+Functions:
+    main(): Entry point for the project. Initializes datasets, trains models, and evaluates results.
 """
-layer1_weights = initialize_weights(2, 2, seed= 668792)   
-output_weights = initialize_weights(2, 1, seed= 668792)
 
-# Create layers
-layer1 = Layer(weights=layer1_weights, num_of_perceptrons=2, activation_method="relu", num="1")
-output = Layer(weights=output_weights, num_of_perceptrons=1, activation_method="relu", num="2")
+from Util import Dataset, Ratio
+from Neural_Network import NeuralNetwork, Layer
+from Trainers import Trainer, SGD
 
-# Create the Neural Network
-nn = NeuralNetwork(layers=[layer1, output])
 
-trainer = Trainer(data, nn, learning_rate= 1)
-trainer.train(epochs= 10000, verbose= True, verbose_step=1000)
 
-err = 0
-# Test the trained network
-print("\nTesting the trained network:")
-for i in range(len(data.test_data[0])):
-    output = nn.forward(data.test_data[0][i])
-    if (loss(output, data.test_data[1][i])) > 0.25: err += 1
-    print(f"Input: {data.test_data[0][i]} -> Predicted: {output}, Expected: {data.test_data[1][i]}")
+def main():
+    """
+    Entry point for the Machine Learning project.
 
-print(f"Precision: {(1 - err/len(data.test_data[0])) * 100}%")
+    This function initializes datasets, trains models, and evaluates results.
+    """
+    # Define dataset path and split ratio
+    dataset_path = "Data/LinearRegression.csv"
+    split_ratio = Ratio(training=0.7, validation=0.2, testing=0.1)
 
-print("---Welcome to simple Linear Regression NN!!---")
-while True:
-    x1 = float(input("x1: "))
-    x2 = float(input("x2: "))
-    out = nn.forward(np.array([x1, x2]))
-    print(out)
+    # Load and split dataset
+    dataset = Dataset(path=dataset_path, split_ratio=split_ratio)
+    dataset.load()
+    dataset.split(label_column="out")
+
+    # Define neural network architecture
+    layers = [
+        Layer(num_of_units=2, activation_mode="sigmoid"),  # Match input features (2)
+        Layer(num_of_units=1, activation_mode="sigmoid")
+    ]
+    nn = NeuralNetwork(layers=layers, loss_func="MSE", dataset=dataset)
+
+    # Define optimizer and trainer
+    optimizer = SGD()
+    trainer = Trainer(nn=nn, optimizer=optimizer, epochs=10, learning_rate=0.01)
+
+    # Train the model
+    trainer.train(batched=True, batch_size=32, shuffle=True)
+
+    # Evaluate the model (example)
+    print("Training complete. Evaluate the model as needed.")
+
+if __name__ == "__main__":
+    main()
+
