@@ -1,50 +1,19 @@
-"""
-This module contains the classes and functions that define a Neural Network.
-
-Classes:
-    NeuralNetwork: Represents a neural network composed of multiple layers, capable of forward and backward propagation.
-    Layer: Represents a layer in a neural network, containing perceptrons, weights, and biases.
-
-Methods:
-    NeuralNetwork.propagate_forward(inputs: Vector) -> Vector: Performs forward propagation through all layers of the network.
-    NeuralNetwork.propagate_backward(): Performs backward propagation through all layers of the network.
-    Layer.forward_pass(inputs: Vector) -> Vector: Computes the output of the layer by calculating the output of each perceptron.
-    Layer.get_gradient(next: Layer) -> Matrix: Computes the gradient of the layer for backpropagation.
-"""
-
 # Imports
 from Util import *
+from DataHandeling import Dataset
+
 
 class NeuralNetwork:
-    """
-    Represents a neural network, which is composed of multiple layers and is capable of performing forward and backward propagation.
-
-    Attributes:
-        layers (list[Layer]): A list of layers that make up the neural network.
-
-    Methods:
-        propagate_forward(inputs: Vector) -> Vector:
-            Performs forward propagation through all layers of the network.
-        propagate_backward():
-            Performs backward propagation through all layers of the network.
-    """
-
-
     def __init__(self, 
                  dataset: Dataset,
                  layers: list["Layer"], 
                  loss_func: str = "MSE"):
-        """
-        Initializes the NeuralNetwork with a list of layers and a specified loss function.
-
-        Args:
-            layers (list[Layer]): A list of layers that make up the neural network.
-            loss_func (str): The loss function to use for training (default is "MSE").
-        """
-
+        
+        
         self.layers: list[Layer] = layers
         self.loss_func: str = loss_func
         self.dataset: Dataset = dataset
+
 
         for idx, layer in enumerate(self.layers):
             layer.parent_nn = self
@@ -52,65 +21,47 @@ class NeuralNetwork:
             
             if layer.weights == None:
                 layer.initialize_weights(mode= layer.initialization_mode)
+                
+        for i in range(1, len(layers)):
+            prev_units = layers[i-1].num_of_units
+            layers[i].weights.shape[1] == prev_units
+       
 
     def propagate_forward(self, inputs: Vector) -> Vector:
-        """
-        Perform forward propagation through all layers of the network.
-
-        Args:
-            inputs (Vector): The input vector to the network.
-
-        Returns:
-            Vector: The output vector after forward propagation.
-        """
-
-        #TODO Validate that the inputs are valid numpy arrays
+        logging.debug(f"Forwarding with inputs: {inputs}")
+        
         for layer in self.layers:
             inputs = layer.forward_pass(inputs)
 
         return inputs
     
+
+        return inputs
+    
     def propagate_backward(self, expected: Vector):
-        """
-        Perform backward propagation through all layers of the network.
-        """
         self.layers[-1].deltas = cost(x= self.layers[-1].a, y= expected, derivative= True, mode= self.loss_func)
+        self.layers[-1].get_gradient()
         for layer in reversed(self.layers[:-1]):
-            layer.get_gradient(next= self.layers[layer.idx + 1])
+            layer.get_deltas(next= self.layers[layer.idx + 1])
+            layer.get_gradient()
 
 
 class Layer:
-    """
-    Represents a layer in a neural network, which contains multiple perceptrons and their associated weights.
-
-    Attributes:
-        weights (Matrix): The weights connecting neurons in this layer to the previous layer.
-        bias (float): The bias term added to the weighted sum of inputs.
-        parent_nn (NeuralNetwork): The neural network to which this layer belongs.
-        idx (int): The identifier number of this layer in its parent neural network.
-        gradient (Matrix): The gradient of the layer for backpropagation.
-
-    Methods:
-        forward_pass(inputs: Vector) -> Vector:
-            Computes the output of the layer by applying weights, bias, and activation function.
-        get_gradient(next: Layer) -> Matrix:
-            Computes the gradient of the layer for backpropagation.
-    """
-
-
     def __init__(self, 
                  num_of_units: int,
                  activation_mode: str= "sigmoid",
                  weights: Matrix= None,
                  bias: Vector= None,
                  initialization_mode: str= "Xavier"):
-        """
-        Initializes the Layer with weights, bias, and metadata.
-        """
+                 
+        assert isinstance(initialization_mode, str), f"initialization_mode must be a string, got {type(initialization_mode)} instead."
+        assert isinstance(num_of_units, int), f"num_of_units must be an integer, got {type(num_of_units)} instead."
+        assert num_of_units > 0, "num_of_units must be greater than 0"
+        assert isinstance(activation_mode, str), f"activation_mode must be a string, got {type(activation_mode)} instead."
+        assert bias is None or is_vector(bias), f"bias must be a Vector, got {type(bias)} instead."
+        if weights is not None:
+            assert is_matrix(weights), f"Weights must be a Matrix, got {type(weights)} instead."
 
-        # TODO Assert self.weights is a 2D Numpy array and it does not have any invalid value in it. self.z, self.deltas and self.a are vectors
-        #TODO Add error handling for invalid layer attributes
-        
         self.parent_nn: NeuralNetwork
         self.idx: int
         self.z: Vector
@@ -128,18 +79,15 @@ class Layer:
         self.activation_mode: str = activation_mode
 
     def initialize_weights(self, mode: str = "Xavier"):
-        """
-        Initialize weights using the specified mode.
-        Supported modes: "Xavier", "XavierNormal", "He", "HeNormal"
-        """
-
         if self.idx == 0:
-            # Assuming input features dimension is inferred from the dataset
-            # Get one sample's feature size from the parent dataset
             sample_input = self.parent_nn.dataset.training.features[0]
-            previous_layer_units = sample_input.shape[0]
+            n_in = sample_input.shape[0]
 
-        n_out, n_in = self.weights.shape
+        else:
+            previous_layer = self.parent_nn.layers[self.idx - 1]
+            n_in = previous_layer.num_of_units
+        
+        n_out = self.num_of_units
 
         if mode == "Xavier":
             limit = np.sqrt(6 / (n_in + n_out))
@@ -160,46 +108,40 @@ class Layer:
         else:
             raise ValueError(f"Unknown initialization mode: {mode}")
 
-        # Bias can be zero or small noise
         self.bias = np.zeros(n_out)
 
-
-
     def forward_pass(self, inputs: Vector) -> Vector:
-        """
-        Compute the output of the layer by applying weights, bias, and activation function.
+        assert isinstance(inputs, Vector), f"Inputs must be a numpy Vector, got {type(inputs)} instead."
+        assert inputs.ndim == 1, f"Inputs must be a Vector ndarray, got {inputs.ndim}D instead."
+        assert inputs.shape[0] > 0, "Input size must be greater than 0"
+        assert inputs.shape[0] == self.weights.shape[1], "Input size must match the number of weights in the layer"
+        assert self.weights is not None, "Weights must be initialized before forward pass"
+        assert self.bias is not None, "Bias must be initialized before forward pass"
 
-        Args:
-            inputs (Vector): The input vector to the layer.
-
-        Returns:
-            Vector: The output vector after applying weights, bias, and activation function.
-        """
+        #TODO think about this operation, if its output are ordered
         self.z = np.dot(self.weights, inputs) + self.bias
         self.a = activation(self.z)
-        self.inputs = inputs #save it for gradient calculation
+        self.inputs = inputs
 
         return self.a
 
+    def get_deltas(self, next: "Layer") -> Vector:
+        assert isinstance(next, Layer), "Next layer must be an instance of Layer"
+        assert next.weights is not None, "Next layer must have weights initialized"
+        assert next.deltas is not None, "Next layer must have deltas initialized"
+        assert next.deltas.shape[0] == next.weights.shape[0], "Next layer deltas must match the number of neurons in the next layer"
+        assert next.weights.shape[1] == self.num_of_units, "Next layer weights must match the number of neurons in this layer"
+        assert self.inputs is not None, "Inputs must be initialized before calculating gradient"
 
-    def get_gradient(self, next: "Layer") -> Matrix:
-        """
-        Compute the gradient of the layer for backpropagation.
+        if not self.idx == len(self.parent_nn.layers) - 1:
+            self.deltas = np.dot(next.weights.T, next.deltas) * activation(self.z, derivative= True, mode= self.activation_mode)
+            
+        return self.deltas
 
-        Args:
-            next (Layer): The next layer in the neural network.
+    def get_gradient(self) -> Matrix:
+        assert self.deltas is not None, "Deltas must be initialized before calculating gradient"
+        assert self.inputs is not None, "Inputs must be initialized before calculating gradient"
 
-        Returns:
-            Matrix: The gradient of the layer.
-        """
-        #TODO assert next is a layer with already computed deltas and valid weights
-
-        #deltas[i] represent the partial derivative of the cost in respect to self.z[i]
-        #next.weights.T[j,i] connects  this layer's neuron[j] with next layer's neuron[i]
-        #delta[j] = sum(next.weitghts(j,i) * next.deltas[i] for i in range next.weights[j]) * activation_derivatice(self.z)
-        self.deltas = np.dot(next.weights.T, next.deltas) * activation(self.z, derivative= True, mode= self.activation_mode)
-
-        #TODO assert inputs and deltas are valid
-        self.gradient = np.outer(self.inputs, self.deltas)
+        #shape npers x ninputs
+        self.gradient = np.outer(self.deltas, self.inputs)
         return self.gradient
-
