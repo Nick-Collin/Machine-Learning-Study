@@ -35,12 +35,11 @@ class NeuralNetwork:
 
         return inputs
     
-
-        return inputs
     
     def propagate_backward(self, expected: Vector):
-        self.layers[-1].deltas = cost(x= self.layers[-1].a, y= expected, derivative= True, mode= self.loss_func)
-        self.layers[-1].get_gradient()
+        output_layer = self.layers[-1]
+        output_layer.deltas = cost(x= output_layer.a, y= expected, derivative= True, mode= self.loss_func) * activation(x= output_layer.z, derivative= True, mode=output_layer.activation_mode)
+        output_layer.get_gradient()
         for layer in reversed(self.layers[:-1]):
             layer.get_deltas(next= self.layers[layer.idx + 1])
             layer.get_gradient()
@@ -52,7 +51,9 @@ class Layer:
                  activation_mode: str= "sigmoid",
                  weights: Matrix= None,
                  bias: Vector= None,
-                 initialization_mode: str= "Xavier"):
+                 initialization_mode: str= "Xavier",
+                 cliping: bool = True,
+                 clip_size: int = 500):
                  
         assert isinstance(initialization_mode, str), f"initialization_mode must be a string, got {type(initialization_mode)} instead."
         assert isinstance(num_of_units, int), f"num_of_units must be an integer, got {type(num_of_units)} instead."
@@ -77,6 +78,8 @@ class Layer:
 
         self.bias = bias if bias is not None else np.zeros(num_of_units)
         self.activation_mode: str = activation_mode
+        self.cliping = cliping
+        self.clip_size = clip_size
 
     def initialize_weights(self, mode: str = "Xavier"):
         if self.idx == 0:
@@ -120,7 +123,9 @@ class Layer:
 
         #TODO think about this operation, if its output are ordered
         self.z = np.dot(self.weights, inputs) + self.bias
-        self.a = activation(self.z)
+        if self.cliping:
+            self.z = np.clip(self.z, -self.clip_size, self.clip_size)
+        self.a = activation(self.z, mode= self.activation_mode)
         self.inputs = inputs
 
         return self.a

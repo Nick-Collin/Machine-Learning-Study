@@ -98,3 +98,51 @@ class Dataset:
             for i in range(0, num_samples, batch_size)
         ]
         return self.batches
+    
+    def normalize(self, 
+                  mode: str = "standardization", 
+                  normalize_labels: bool = False):
+            
+            if not (hasattr(self, 'training') and hasattr(self, 'validation') and hasattr(self, 'testing')):
+                raise AttributeError("Data must be split before normalization!")
+
+            # Save for normalization in deploy
+            self.norm_mode = mode
+
+            # Compute normalization parameters from training data
+            train_features = self.training.features
+            if mode == "standardization":
+                self.feature_mean = np.mean(train_features, axis=0)
+                self.feature_std = np.std(train_features, axis=0)
+                self.feature_std[self.feature_std == 0] = 1.0  # Avoid division by zero
+            elif mode == "minmax":
+                self.feature_min = np.min(train_features, axis=0)
+                self.feature_max = np.max(train_features, axis=0)
+                self.feature_range = self.feature_max - self.feature_min
+                self.feature_range[self.feature_range == 0] = 1.0
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+            # Apply normalization to all datasets
+            for data in [self.training, self.validation, self.testing]:
+                if mode == "standardization":
+                    data.features = (data.features - self.feature_mean) / self.feature_std
+                elif mode == "minmax":
+                    data.features = (data.features - self.feature_min) / self.feature_range
+
+            # Normalize labels if required
+            if normalize_labels:
+                train_labels = self.training.labels
+                if mode == "standardization":
+                    self.label_mean = np.mean(train_labels)
+                    self.label_std = np.std(train_labels)
+                    self.label_std = self.label_std if self.label_std != 0 else 1.0
+                    for data in [self.training, self.validation, self.testing]:
+                        data.labels = (data.labels - self.label_mean) / self.label_std
+                elif mode == "minmax":
+                    self.label_min = np.min(train_labels)
+                    self.label_max = np.max(train_labels)
+                    self.label_range = self.label_max - self.label_min
+                    self.label_range = self.label_range if self.label_range != 0 else 1.0
+                    for data in [self.training, self.validation, self.testing]:
+                        data.labels = (data.labels - self.label_min) / self.label_range
