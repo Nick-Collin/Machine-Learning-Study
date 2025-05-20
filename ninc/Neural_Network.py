@@ -128,6 +128,8 @@ class Layer:
         self.a = activation(self.z, mode= self.activation_mode)
         self.inputs = inputs
 
+        logging.debug(f"Forwarding with inputs of shape: {inputs.shape}")
+
         return self.a
 
     def get_deltas(self, next: "Layer") -> Vector:

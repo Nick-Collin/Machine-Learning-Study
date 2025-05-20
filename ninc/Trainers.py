@@ -2,13 +2,13 @@ from ninc.Neural_Network import *
 from ninc.DataHandeling import Dataset
 
 class Optimizer:
-    def update(self, layer: Layer, learning_rate: float):
+    def update(self, layer: Layer, learning_rate: float) -> None:
         raise NotImplementedError("This method should be implemented by subclasses!")
     
 class SGD(Optimizer):
     def update(self, 
                layer:Layer, 
-               learning_rate: float):
+               learning_rate: float) -> None:
         
         assert hasattr(layer, "gradient"), "Layer must have a gradient attribute. Maybe it was not calculated?"
         assert hasattr(layer, "weights"), "Layer must have a weights attribute. Maybe it was not initialized?"
@@ -20,7 +20,7 @@ class PolyakMomentum(Optimizer):
 
     def update(self, 
                layer: Layer, 
-               learning_rate: float):
+               learning_rate: float) -> None:
         
         if not hasattr(layer, 'velocity_weights'):
             layer.velocity_weights = np.zeros_like(layer.weights)
@@ -43,7 +43,7 @@ class RMSProp(Optimizer):
         self.beta = beta
         self.epsilon = epsilon
 
-    def update(self, layer: Layer, learning_rate: float):
+    def update(self, layer: Layer, learning_rate: float) -> None:
         if not hasattr(layer, 'v_weights'):
             layer.v_weights = np.zeros_like(layer.weights)
         if not hasattr(layer, 'v_bias'):
@@ -64,7 +64,7 @@ class Adam(Optimizer):
         self.epsilon = epsilon
         self.t = 0  # Timestep
 
-    def update(self, layer: Layer, learning_rate: float):
+    def update(self, layer: Layer, learning_rate: float) -> None:
         if not hasattr(layer, 'm_weights'):
             layer.m_weights = np.zeros_like(layer.weights)
             layer.v_weights = np.zeros_like(layer.weights)
@@ -111,7 +111,7 @@ class Trainer:
     def train(self,
               batched: bool = True,
               batch_size: int = 32,
-              shuffle: bool = True):
+              shuffle: bool = True) -> None:
 
         if batched and not self.dataset.batches:
             self.dataset.split_batches(batch_size, shuffle)
@@ -124,11 +124,11 @@ class Trainer:
                 self.train_step(self.dataset.training.features, self.dataset.training.labels)
             
             if epoch % self.checkpoint == 0:
-                logging.info(f"Epoch {epoch}/{self.epochs} completed.")
-                logging.debug(f"Current weights: {[layer.weights for layer in self.nn.layers]}")
+                logging.info(f"Epoch {epoch}/{self.epochs} completed. Processed {len(self.dataset.batches) if batched else len(self.dataset.training.features)} samples.")
+                logging.debug(f"Current weights shapes: {[layer.weights.shape for layer in self.nn.layers]}")
                 self.validate()
 
-    def validate(self):
+    def validate(self) -> None:
         if not hasattr(self.dataset, "validation"):
             raise RuntimeError("Validation dataset is not available.")
         
@@ -146,7 +146,7 @@ class Trainer:
 
     def train_step(self, 
                     features: Vector,    
-                    labels: Vector):
+                    labels: Vector) -> None:
         
         for feature, label, in zip(features, labels):
             self.nn.propagate_forward(feature)
@@ -154,3 +154,41 @@ class Trainer:
             for layer in self.nn.layers:
                 self.optimizer.update(layer, self.learning_rate)
                 logging.debug(f"Updated layer {layer.idx} with weights: {layer.weights}")
+    
+    def test(self):
+        if not hasattr(self.dataset, "testing"):
+            raise RuntimeError("Test dataset is not available.")
+
+        features = self.dataset.testing.features
+        labels = self.dataset.testing.labels
+
+        total_loss = 0
+        for feature, label in zip(features, labels):
+            predictions = self.nn.propagate_forward(feature)
+            total_loss += cost(predictions, label, derivative=False, mode=self.nn.loss_func)
+
+        mean_loss = total_loss / len(features)
+        logging.info(f"Test loss: {mean_loss.mean()}")
+    
+    def calculate_precision(self, dataset_type="testing"):
+        if not hasattr(self.dataset, dataset_type):
+            raise RuntimeError(f"{dataset_type.capitalize()} dataset is not available.")
+
+        dataset = getattr(self.dataset, dataset_type)
+        features = dataset.features
+        labels = dataset.labels
+
+        correct_predictions = 0
+        total_predictions = len(features)
+
+        for feature, label in zip(features, labels):
+            predictions = self.nn.propagate_forward(feature)
+            predicted_label = np.argmax(predictions)
+            true_label = np.argmax(label)
+
+            if predicted_label == true_label:
+                correct_predictions += 1
+
+        precision = (correct_predictions / total_predictions) * 100
+        logging.info(f"Precision on {dataset_type} dataset: {precision:.2f}%")
+        return precision

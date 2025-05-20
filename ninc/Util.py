@@ -1,5 +1,4 @@
 import numpy as np
-from ninc.DataHandeling import Dataset
 import logging
 
 Tensor = np.ndarray
@@ -16,6 +15,7 @@ def is_vector(array: np.ndarray) -> bool:
     return isinstance(array, np.ndarray) and array.ndim == 1
 
 def activation(x: Vector, derivative: bool = False, mode: str = "sigmoid") -> Vector:
+    logging.debug(f"Activation function '{mode}' called with input shape {x.shape}")
     match mode:
         case "sigmoid":
             sig = 1 / (1 + np.exp(-x))
@@ -58,6 +58,7 @@ def activation(x: Vector, derivative: bool = False, mode: str = "sigmoid") -> Ve
             raise ValueError(f"No activation function named: {mode}. Use [sigmoid, tanh, relu, leaky_relu, softplus, softsign, linear]")
         
 def cost(x: Vector, y: Vector, derivative: bool= False, mode: str= "MSE") -> Vector:
+    logging.debug(f"Cost function '{mode}' called with input shapes x: {x.shape}, y: {y.shape}")
     match mode:
         case "MSE":
             if derivative:
@@ -65,18 +66,18 @@ def cost(x: Vector, y: Vector, derivative: bool= False, mode: str= "MSE") -> Vec
             else:
                 return (x - y) ** 2
             
-def norm_input(x: Vector, dta: Dataset) -> Vector:
-    match dta.norm_mode:
+def norm_input(x: Vector, feature_mean: Vector, feature_std: Vector, norm_mode: str) -> Vector:
+    match norm_mode:
         case "standardization":
-            return (x - dta.feature_mean) / dta.feature_std
+            return (x - feature_mean) / feature_std
         
         case _:
             raise AttributeError(f"Couldnt resolve norm mode")
 
-def denorm_output(y: Vector, dta: Dataset) -> Vector:
-    assert hasattr(dta, 'label_mean') and hasattr(dta, 'label_std'), "Labels where not normalized! You shoudnt denormalize outputs"
+def denorm_output(y: Vector, label_mean: float, label_std: float, norm_mode: str) -> Vector:
+    assert label_mean is not None and label_std is not None, "Labels where not normalized! You shoudnt denormalize outputs"
     
-    match dta.norm_mode:
+    match norm_mode:
         case "standardization":
-            return y * dta.label_std + dta.label_mean
+            return y * label_std + label_mean
 

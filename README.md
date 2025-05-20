@@ -1,111 +1,256 @@
-# Ninc, A Simple Neural Network Framework
+# Ninc: A Simple Neural Network Framework
 
-This is a project I've been working on lately for educational purposes. I've been studying Machine Learning on my own for a while, and I've decided to put it into practice. Well, that's the outcome. Hope you like it!
+Welcome to **Ninc**, a lightweight neural network framework designed for educational purposes. This project is a practical implementation of machine learning concepts, created to help you learn and experiment with neural networks. Enjoy exploring and contributing!
 
-## Components
+---
 
-### DataHandeling.py
+## Features
 
-#### Description
+- Lightweight and easy-to-understand neural network framework.
+- Supports dataset handling, including loading, splitting, batching, and normalization.
+- Customizable neural network architecture with various activation functions and initialization methods.
+- Multiple optimization algorithms, including SGD, Adam, and RMSProp.
+- Comprehensive training and validation tools.
 
-This module is responsible for handling datasets, including loading, splitting, batching, and normalization. It provides utilities to preprocess data for training and testing.
+---
 
-#### Classes
+## Requirements
 
-- **Data**: Represents a dataset with features and labels.
-- **Ratio**: Defines the split ratio for training, validation, and testing datasets.
-- **Dataset**: Handles dataset loading, splitting, batching, and normalization.
+- Python 3.8 or higher
+- Dependencies: `numpy`, `pandas`
 
-#### Functions
+---
 
-- **to_data**: Converts a pandas DataFrame into a `Data` object.
+## Project Structure
 
-### NeuralNetwork.py
+### Modules
 
-#### Description
+#### 1. **DataHandeling.py**
 
-This module defines the structure and behavior of neural networks, including layers, forward propagation, and backward propagation.
+- **Purpose**: Handles datasets (loading, splitting, batching, normalization).
+- **Key Classes**:
+  - `Data`: Represents a dataset.
+    - **Attributes**:
+      - `features`: Feature matrix (numpy array).
+      - `labels`: Label vector (numpy array).
+  - `Ratio`: Defines train/validation/test split ratios.
+    - **Arguments**:
+      - `training` (float): Proportion of training data.
+      - `validation` (float): Proportion of validation data.
+      - `testing` (float): Proportion of testing data.
+  - `Dataset`: Manages dataset operations.
+    - **Methods**:
+      - `load()`: Loads data from a file (CSV or Excel).
+      - `split(shuffle=True, label_column='label')`: Splits data into training, validation, and testing sets.
+      - `split_batches(batch_size, shuffle=True)`: Splits training data into batches.
+      - `normalize(mode='standardization', normalize_labels=False)`: Normalizes features and labels.
+- **Key Function**:
+  - `to_data(df, label_column='label')`: Converts a pandas DataFrame into a `Data` object.
 
-#### Classes
+#### 2. **Neural_Network.py**
 
-- **NeuralNetwork**: Represents a neural network with multiple layers and a loss function.
-- **Layer**: Represents a single layer in the neural network, including weight initialization, forward pass, and gradient computation.
+- **Purpose**: Defines neural network architecture and operations.
+- **Key Classes**:
+  - `NeuralNetwork`: Represents a neural network.
+    - **Arguments**:
+      - `dataset` (Dataset): The dataset to train on.
+      - `layers` (list[Layer]): List of layers in the network.
+      - `loss_func` (str): Loss function to use (e.g., "MSE").
+    - **Methods**:
+      - `propagate_forward(inputs)`: Performs forward propagation.
+      - `propagate_backward(expected)`: Performs backward propagation.
+  - `Layer`: Represents a single layer in the network.
+    - **Arguments**:
+      - `num_of_units` (int): Number of neurons in the layer.
+      - `activation_mode` (str): Activation function (e.g., "sigmoid").
+      - `weights` (Matrix): Weight matrix (optional).
+      - `bias` (Vector): Bias vector (optional).
+      - `initialization_mode` (str): Weight initialization method (e.g., "Xavier").
+    - **Methods**:
+      - `initialize_weights(mode)`: Initializes weights and biases.
+      - `forward_pass(inputs)`: Computes the output of the layer.
+      - `get_deltas(next_layer)`: Computes deltas for backpropagation.
+      - `get_gradient()`: Computes the gradient for weight updates.
 
-### Trainers.py
+#### 3. **Trainers.py**
 
-#### Description
+- **Purpose**: Provides tools for training neural networks.
+- **Key Classes**:
+  - `Trainer`: Manages the training process.
+    - **Arguments**:
+      - `nn` (NeuralNetwork): The neural network to train.
+      - `optimizer` (Optimizer): Optimization algorithm (e.g., SGD, Adam).
+      - `epochs` (int): Number of training epochs.
+      - `learning_rate` (float): Learning rate for optimization.
+      - `checkpoint` (int): Interval for logging progress.
+    - **Methods**:
+      - `train(batched=True, batch_size=32, shuffle=True)`: Trains the network.
+      - `validate()`: Evaluates the network on the validation set.
+      - `train_step(features, labels)`: Performs a single training step.
+  - Optimizers:
+    - `SGD`: Stochastic Gradient Descent.
+    - `PolyakMomentum`: Momentum-based optimizer.
+    - `RMSProp`: Root Mean Square Propagation.
+    - `Adam`: Adaptive Moment Estimation.
 
-This module provides tools for training neural networks using various optimization algorithms.
+#### 4. **Util.py**
 
-#### Classes
+- **Purpose**: Utility functions for activation, cost functions, and normalization.
+- **Key Functions**:
+  - `activation(x, derivative=False, mode='sigmoid')`: Implements activation functions.
+    - **Arguments**:
+      - `x` (Vector): Input vector.
+      - `derivative` (bool): Whether to compute the derivative.
+      - `mode` (str): Activation function (e.g., "sigmoid", "relu").
+    - **Returns**: Transformed vector.
+  - `cost(x, y, derivative=False, mode='MSE')`: Computes cost functions.
+    - **Arguments**:
+      - `x` (Vector): Predicted values.
+      - `y` (Vector): True values.
+      - `derivative` (bool): Whether to compute the derivative.
+      - `mode` (str): Cost function (e.g., "MSE").
+    - **Returns**: Cost value or gradient.
+  - `norm_input(x, dta)`: Normalizes input features.
+    - **Arguments**:
+      - `x` (Vector): Input vector.
+      - `dta` (Dataset): Dataset object with normalization parameters.
+    - **Returns**: Normalized vector.
+  - `denorm_output(y, dta)`: Denormalizes output values.
+    - **Arguments**:
+      - `y` (Vector): Output vector.
+      - `dta` (Dataset): Dataset object with normalization parameters.
+    - **Returns**: Denormalized vector.
 
-- **Optimizer**: Base class for optimization algorithms.
-- **SGD**: Implements Stochastic Gradient Descent.
-- **PolyakMomentum**: Implements momentum-based optimization.
-- **RMSProp**: Implements RMSProp optimization.
-- **Adam**: Implements the Adam optimization algorithm.
-- **Trainer**: Manages the training process, including batching, validation, and weight updates.
+---
 
-### Util.py
+## Getting Started
 
-#### Description
+### Installation
 
-This module provides utility functions and types for neural network operations, including activation functions, cost functions, and normalization utilities.
+1. Clone the repository:
+   ```bash
+   git clone <repository_url>
+   ```
+2. Install dependencies:
+   ```bash
+   pip install numpy pandas
+   ```
 
-#### Functions
-
-- **activation**: Implements various activation functions and their derivatives.
-- **cost**: Implements cost functions and their derivatives.
-- **norm_input**: Normalizes input features based on the dataset's normalization parameters.
-- **denorm_output**: Denormalizes output predictions based on the dataset's normalization parameters.
-
-## Installation
-
-To use this framework, clone the repository and ensure you have Python installed along with the required libraries, such as `numpy` and `pandas`.
+---
 
 ## Usage
 
-1. Prepare your dataset in the `Data` folder (e.g., `LinearRegression.csv`).
-2. Configure your dataset path and split ratio.
+### Step-by-Step Guide
+
+1. **Prepare Your Dataset**
 
    ```python
-   from ninc.DataHadeling import Dataset, Ratio
+   from ninc.DataHandeling import Dataset, Ratio
 
    dataset_path = "Data/LinearRegression.csv"
    split_ratio = Ratio(training=0.7, validation=0.2, testing=0.1)
 
    dataset = Dataset(path=dataset_path, split_ratio=split_ratio)
-   ```
-3. Load and split your dataset.
-
-   ```python
    dataset.load()
-   # Label_column gets the name of the column
-   dataset.split(label_column= "out") 
+   dataset.split(label_column="out")
+   dataset.normalize(normalize_labels=True)
    ```
-4. Normalize(Optional)
+2. **Define Neural Network Layers**
 
    ```python
-   # If normalize_labels is set to true the outputs will be normalized as well
-   dataset.normalize(normalize_labels= True)
+   from ninc.Neural_Network import Layer
+
+   layers = [
+       Layer(num_of_units=1, activation_mode="linear", initialization_mode="He")
+   ]
    ```
-5. Configure the Layers
+3. **Initialize the Neural Network**
 
-    ```python
-    from ninc.NeuralNetwork import Layer
+   ```python
+   from ninc.Neural_Network import NeuralNetwork
 
-    layers =[
-        Layer(num_of_units=1, activation_mode="linear", initialization_mode= "He")
-    ]
-    ```
-6. Configure the Neural Network
+   nn = NeuralNetwork(layers=layers, loss_func="MSE", dataset=dataset)
+   ```
+4. **Set Up a Trainer**
 
-    ```python
-    from ninc.NeuralNetwork import NeuralNetwork
+   ```python
+   from ninc.Trainers import Trainer, PolyakMomentum
 
-    nn = NeuralNetwork(layers=layers, loss_func="MSE", dataset=dataset)
-    ```
+   optimizer = PolyakMomentum()
+   trainer = Trainer(nn=nn, optimizer=optimizer, epochs=1000, learning_rate=0.01, checkpoint=100)
+   ```
+5. **Train the Model**
+
+   ```python
+   trainer.train(batched=True, batch_size=32, shuffle=True)
+   ```
+6. **Evaluate the Model**
+7. **Full Example**
+
+   ```python
+   from ninc.Util import logging, np, norm_input, denorm_output
+   from ninc.Neural_Network import NeuralNetwork, Layer
+   from ninc.Trainers import Trainer, PolyakMomentum
+   from ninc.DataHandeling import Dataset, Ratio
+
+   logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+   def main():
+       # Define dataset path and split ratio
+       dataset_path = "Data/LinearRegression.csv"
+       split_ratio = Ratio(training=0.7, validation=0.2, testing=0.1)
+
+       # Load and split dataset
+       dataset = Dataset(path=dataset_path, split_ratio=split_ratio)
+       dataset.load()
+       dataset.split(label_column="out")
+       dataset.normalize(normalize_labels= True)
+
+       # Define neural network architecture
+       layers = [ # Match input features (2)
+           Layer(num_of_units=1, activation_mode="linear", initialization_mode= "He")
+       ]
+       nn = NeuralNetwork(layers=layers, loss_func="MSE", dataset=dataset)
+
+       # Define optimizer and trainer
+       optimizer = PolyakMomentum()
+       trainer = Trainer(nn=nn, optimizer=optimizer, epochs=1000, learning_rate=0.01, checkpoint=1)
+
+       # Train the model
+       trainer.train(batched=True, batch_size=32, shuffle=True)
+
+       # Evaluate the model (example)
+       print("Training complete. Evaluate the model as needed.")
+
+       testing_mode(nn, dataset)
+
+   def testing_mode(nn: NeuralNetwork, dataset):
+       while True:
+           try:
+               x1 = int(input("x1: "))
+               x2 = int(input("x2: "))
+               inputs = np.array([x1, x2])
+
+           except:
+               print("Couldn't resolve inputs, bailing out!")
+               exit()
+
+           out = nn.propagate_forward(norm_input(inputs, dataset))
+           out = denorm_output(out, dataset)
+           print(f"Out: {out}")
+
+   if __name__ == "__main__":
+       main()
+   ```
+
+---
 
 ## Contributors
 
-This project is open for contributors. Currently, it's only me, Nicolas Pinho. Please feel free to contribute!
+This project is open for contributions! Currently maintained by **Nicolas Pinho**. Feel free to fork, improve, and submit pull requests.
+
+---
+
+## Contact
+
+For questions or support, please contact **Nicolas Pinho** at [nicolas.pinho.rj@gmail.com].
