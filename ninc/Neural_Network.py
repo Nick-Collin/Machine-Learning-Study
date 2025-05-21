@@ -1,6 +1,6 @@
 # Imports
 from ninc.Util import *
-from ninc.DataHandeling import Dataset
+from ninc.DataHandling import Dataset
 
 
 class NeuralNetwork:
@@ -43,6 +43,24 @@ class NeuralNetwork:
         for layer in reversed(self.layers[:-1]):
             layer.get_deltas(next= self.layers[layer.idx + 1])
             layer.get_gradient()
+
+    def save(self, filepath: str):
+        """Save model weights and biases to a .npz file."""
+        params = {}
+        for i, layer in enumerate(self.layers):
+            params[f"layer_{i}_weights"] = layer.weights
+            params[f"layer_{i}_bias"] = layer.bias
+        np.savez(filepath, **params)
+
+    @classmethod
+    def load(cls, filepath: str, dataset: Dataset, layers: list["Layer"], loss_func: str = "MSE") -> "NeuralNetwork":
+        """Load model weights and biases from a .npz file into a new NeuralNetwork instance."""
+        nn = cls(dataset=dataset, layers=layers, loss_func=loss_func)
+        data = np.load(filepath)
+        for i, layer in enumerate(nn.layers):
+            layer.weights = data[f"layer_{i}_weights"]
+            layer.bias = data[f"layer_{i}_bias"]
+        return nn
 
 
 class Layer:

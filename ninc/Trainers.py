@@ -1,5 +1,5 @@
 from ninc.Neural_Network import *
-from ninc.DataHandeling import Dataset
+from ninc.DataHandling import Dataset
 
 class Optimizer:
     def update(self, layer: Layer, learning_rate: float) -> None:
