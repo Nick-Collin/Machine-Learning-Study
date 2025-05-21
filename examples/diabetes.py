@@ -1,40 +1,32 @@
-from ninc.Util import logging, np, norm_input, denorm_output
+import logging
+import sys
+logging.basicConfig(filename="log.txt", level=logging.INFO, filemode="w")
+sys.stdout = open("log.txt", "a")
+sys.stderr = open("log.txt", "a")
+
+from ninc.DataHandling import Dataset, Ratio
 from ninc.Neural_Network import NeuralNetwork, Layer
 from ninc.Trainers import Trainer, Adam
-from ninc.DataHandling import Dataset, Ratio
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Load and prepare data
+dataset = Dataset(path="Data/diabetes.csv", split_ratio=Ratio(0.7, 0.2, 0.1))
+dataset.load()
+dataset.split(label_column="Outcome", one_hot=True)
+dataset.normalize()
 
-def main():
-    # Define dataset path and split ratio
-    dataset_path = "Data/diabetes.csv"
-    split_ratio = Ratio(training=0.7, validation=0.2, testing=0.1)
+# Define network architecture
+layers = [
+    Layer(num_of_units=16, activation_mode="relu", initialization_mode="He"),
+    Layer(num_of_units=2, activation_mode="sigmoid", initialization_mode="Xavier")
+]
 
-    # Load and prepare dataset
-    dataset = Dataset(path=dataset_path, split_ratio=split_ratio)
-    dataset.load()
-    dataset.split(label_column="Outcome") 
-    dataset.normalize(normalize_labels=True)
+# Initialize network and trainer
+nn = NeuralNetwork(layers=layers, loss_func="CrossEntropy", dataset=dataset)
+optimizer = Adam()
+trainer = Trainer(nn=nn, optimizer=optimizer, epochs=100, learning_rate=0.001)
 
-    # Define neural network architecture
-    input_dim = dataset.training.features.shape[1]
-    layers = [
-        Layer(num_of_units=32, activation_mode="relu", initialization_mode="He"),
-        Layer(num_of_units=16, activation_mode="relu", initialization_mode="He"),
-        Layer(num_of_units=1, activation_mode="linear", initialization_mode="He")
-    ]
-
-    nn = NeuralNetwork(layers=layers, loss_func="MSE", dataset=dataset)
-
-    # Define optimizer and trainer
-    optimizer = Adam()
-    trainer = Trainer(nn=nn, optimizer=optimizer, epochs=200, learning_rate=0.001, checkpoint=1)
-
-    # Train the model
-    trainer.train(batched=True, batch_size=32, shuffle=True)
-
-    # Evaluate on test set
-    trainer.test()
-
-if __name__ == "__main__":
-    main()
+# Train and evaluate
+trainer.train(batched=True, batch_size=32, shuffle=True)
+trainer.test()
+trainer.calculate_precision(dataset_type="testing")
+nn.save("diabetes.npz")

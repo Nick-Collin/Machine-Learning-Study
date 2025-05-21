@@ -101,12 +101,16 @@ def get_activation(mode: str | ActivationFunction) -> ActivationFunction:
     raise ValueError(f"No activation function named: {mode}. Use one of {list(_activation_registry.keys())} or register your own.")
 
 def activation(x: Vector, derivative: bool = False, mode: str | ActivationFunction = "sigmoid") -> Vector:
-    act = get_activation(mode)
-    logging.debug(f"Activation function '{act.__class__.__name__}' called with input shape {x.shape}")
-    if derivative:
-        return act.derivative(x)
-    else:
-        return act(x)
+    try:
+        act = get_activation(mode)
+        logging.debug(f"Activation function '{act.__class__.__name__}' called with input shape {x.shape}")
+        if derivative:
+            return act.derivative(x)
+        else:
+            return act(x)
+    except Exception as e:
+        logging.error(f"Error in activation function '{mode}': {e}")
+        raise
 
 class CostFunction(abc.ABC):
     @abc.abstractmethod
@@ -123,9 +127,22 @@ class MSE(CostFunction):
     def derivative(self, x: Vector, y: Vector) -> Vector:
         return 2 * (x - y)
 
+class CrossEntropy(CostFunction):
+    def __call__(self, x: Vector, y: Vector) -> Vector:
+        # Clip x to avoid log(0)
+        eps = 1e-12
+        x_clipped = np.clip(x, eps, 1 - eps)
+        return -np.sum(y * np.log(x_clipped) + (1 - y) * np.log(1 - x_clipped), axis=-1)
+
+    def derivative(self, x: Vector, y: Vector) -> Vector:
+        eps = 1e-12
+        x_clipped = np.clip(x, eps, 1 - eps)
+        return (x_clipped - y) / (x_clipped * (1 - x_clipped) + eps)
+
 # Registry for built-in and custom cost functions
 _cost_registry = {
     'MSE': MSE(),
+    'CrossEntropy': CrossEntropy(),
 }
 
 def register_cost(name: str, cost: CostFunction):
@@ -139,25 +156,44 @@ def get_cost(mode: str | CostFunction) -> CostFunction:
     raise ValueError(f"No cost function named: {mode}. Use one of {list(_cost_registry.keys())} or register your own.")
 
 def cost(x: Vector, y: Vector, derivative: bool= False, mode: str | CostFunction= "MSE") -> Vector:
-    cost_func = get_cost(mode)
-    logging.debug(f"Cost function '{cost_func.__class__.__name__}' called with input shapes x: {x.shape}, y: {y.shape}")
-    if derivative:
-        return cost_func.derivative(x, y)
-    else:
-        return cost_func(x, y)
+    try:
+        cost_func = get_cost(mode)
+        logging.debug(f"Cost function '{cost_func.__class__.__name__}' called with input shapes x: {x.shape}, y: {y.shape}")
+        if derivative:
+            return cost_func.derivative(x, y)
+        else:
+            return cost_func(x, y)
+    except Exception as e:
+        logging.error(f"Error in cost function '{mode}': {e}")
+        raise
 
 def norm_input(x: Vector, feature_mean: Vector, feature_std: Vector, norm_mode: str) -> Vector:
     match norm_mode:
         case "standardization":
-            return (x - feature_mean) / feature_std
-        
+            if np.any(feature_std == 0):
+                logging.warning("Zero found in feature_std during normalization. This will result in inf or nan values.")
+            result = (x - feature_mean) / feature_std
+            if np.isnan(result).any() or np.isinf(result).any():
+                logging.warning("NaN or inf detected in normalized input features.")
+            return result
         case _:
             raise AttributeError(f"Couldnt resolve norm mode")
 
 def denorm_output(y: Vector, label_mean: float, label_std: float, norm_mode: str) -> Vector:
-    assert label_mean is not None and label_std is not None, "Labels where not normalized! You shoudnt denormalize outputs"
-    
-    match norm_mode:
-        case "standardization":
-            return y * label_std + label_mean
+    if label_mean is None or label_std is None:
+        logging.error("Labels were not normalized! You shouldn't denormalize outputs.")
+        raise ValueError("Labels were not normalized! You shouldn't denormalize outputs.")
+    try:
+        match norm_mode:
+            case "standardization":
+                result = y * label_std + label_mean
+                if np.isnan(result).any() or np.isinf(result).any():
+                    logging.warning("NaN or inf detected in denormalized output.")
+                return result
+            case _:
+                logging.error(f"Unknown normalization mode '{norm_mode}' in denorm_output.")
+                raise AttributeError(f"Couldn't resolve norm mode '{norm_mode}' in denorm_output.")
+    except Exception as e:
+        logging.error(f"Error in denorm_output: {e}")
+        raise
 
