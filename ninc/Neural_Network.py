@@ -1,7 +1,8 @@
 # Imports
 from ninc.Util import *
 from ninc.DataHandling import Dataset
-
+from ninc.Activation import activation
+from ninc.Cost import cost
 
 class NeuralNetwork:
     """
@@ -20,20 +21,20 @@ class NeuralNetwork:
         self.loss_func: str = loss_func
         self.dataset: Dataset = dataset
 
-
         for idx, layer in enumerate(self.layers):
             layer.parent_nn = self
             layer.idx = idx
             # Initialize weights if not already set
-            if layer.weights == None:
-                layer.initialize_weights(mode= layer.initialization_mode)
+            if layer.weights is None:
+                layer.initialize_weights(mode=layer.initialization_mode)
         # Check weight dimensions for all layers
         for i in range(1, len(layers)):
             prev_units = layers[i-1].num_of_units
             assert layers[i].weights.shape[1] == prev_units, \
                 f"Layer {i} weight dim mismatch. Expected {prev_units}, got {layers[i].weights.shape[1]}"
     
-    def propagate_forward(self, inputs: Vector) -> Vector:
+    def propagate_forward(self, 
+                          inputs: Vector) -> Vector:
         """
         Perform a forward pass through all layers of the network.
         Returns the output vector.
@@ -47,7 +48,8 @@ class NeuralNetwork:
             logging.error(f"Error during forward propagation: {e}")
             raise
     
-    def propagate_backward(self, expected: Vector):
+    def propagate_backward(self, 
+                           expected: Vector):
         """
         Perform a backward pass (backpropagation) to compute gradients for all layers.
         """
@@ -62,14 +64,35 @@ class NeuralNetwork:
             logging.error(f"Error during backward propagation: {e}")
             raise
 
-    def save(self, filepath: str):
+    def save(self, 
+             filepath: str):
         """
-        Save model weights and biases to a .npz file.
+        Save model weights, biases, and architecture metadata to a .npz file.
+        - Weights and biases for each layer are saved with unique keys.
+        - Architecture (layer configuration, activation, etc.) and loss function are saved as JSON metadata.
+        - The metadata allows full reconstruction of the model when loading.
         """
+        import json
         params = {}
+        # Save weights and biases
         for i, layer in enumerate(self.layers):
             params[f"layer_{i}_weights"] = layer.weights
             params[f"layer_{i}_bias"] = layer.bias
+        # Save architecture and loss function as metadata
+        architecture = []
+        for layer in self.layers:
+            architecture.append({
+                'num_of_units': layer.num_of_units,
+                'activation_mode': layer.activation_mode,
+                'initialization_mode': layer.initialization_mode,
+                'clipping': layer.clipping,
+                'clip_size': layer.clip_size
+            })
+        metadata = {
+            'architecture': architecture,
+            'loss_func': self.loss_func
+        }
+        params['metadata'] = np.array([json.dumps(metadata)])
         try:
             np.savez(filepath, **params)
             logging.info(f"Model saved to {filepath}")
@@ -78,16 +101,38 @@ class NeuralNetwork:
             raise
 
     @classmethod
-    def load(cls, filepath: str, dataset: Dataset, layers: list["Layer"], loss_func: str = "MSE") -> "NeuralNetwork":
+    def load(cls, 
+             filepath: str, 
+             dataset: Dataset) -> "NeuralNetwork":
         """
-        Load model weights and biases from a .npz file into a new NeuralNetwork instance.
+        Load model weights, biases, and architecture metadata from a .npz file into a new NeuralNetwork instance.
+        - Reads weights and biases for each layer from the file.
+        - Loads architecture and loss function from JSON metadata.
+        - Reconstructs each layer and the neural network as originally saved, so no manual architecture specification is needed.
         """
+        import json
         try:
+            data = np.load(filepath, allow_pickle=True)
+            # Load metadata
+            metadata = json.loads(data['metadata'][0])
+            architecture = metadata['architecture']
+            loss_func = metadata.get('loss_func', 'MSE')
+            # Reconstruct layers
+            layers = []
+            for i, layer_info in enumerate(architecture):
+                weights = data[f"layer_{i}_weights"]
+                bias = data[f"layer_{i}_bias"]
+                layer = Layer(
+                    num_of_units=layer_info['num_of_units'],
+                    activation_mode=layer_info['activation_mode'],
+                    weights=weights,
+                    bias=bias,
+                    initialization_mode=layer_info.get('initialization_mode', 'Xavier'),
+                    clipping=layer_info.get('clipping', True),
+                    clip_size=layer_info.get('clip_size', 500)
+                )
+                layers.append(layer)
             nn = cls(dataset=dataset, layers=layers, loss_func=loss_func)
-            data = np.load(filepath)
-            for i, layer in enumerate(nn.layers):
-                layer.weights = data[f"layer_{i}_weights"]
-                layer.bias = data[f"layer_{i}_bias"]
             logging.info(f"Model loaded from {filepath}")
             return nn
         except Exception as e:
@@ -227,3 +272,4 @@ class Layer:
         # Gradient is the outer product of deltas and inputs
         self.gradient = np.outer(self.deltas, self.inputs)
         return self.gradient
+    
