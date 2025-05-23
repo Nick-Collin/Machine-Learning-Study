@@ -1,7 +1,17 @@
-from ninc.Util import Vector
+from neurolite.Util import Vector
 from abc import ABC, abstractmethod
 import numpy as np
 import logging
+
+'''
+TODO Missing support for batch shape checking
+
+Most activations will work batch-wise with x.shape == (batch_size, features) due to NumPy broadcasting. However:
+    You don't verify or enforce that x is either 1D or 2D.
+    This might break for odd shapes (e.g., 3D tensors for ConvNets in the future).
+Suggestion:
+Add shape checks or reshape handling logic if you plan to extend this to CNNs or batched models.
+'''
 
 class ActivationFunction(ABC):
     @abstractmethod
@@ -61,6 +71,7 @@ class ELU(ActivationFunction):
         return np.where(x > 0, 1, self.alpha * np.exp(x))
 
 
+# TODO Theres a possible overflow in __call__(), handle it!
 class Softplus(ActivationFunction):
     def __call__(self, x: Vector) -> Vector:
         return np.log1p(np.exp(x))
@@ -84,8 +95,20 @@ class Linear(ActivationFunction):
     def derivative(self, x: Vector) -> Vector:
         return np.ones_like(x)
 
+'''
+TODO softmax returns the Jacobian Matrix, but most other derivatives returns vectors, checkout for inconsistency , possible fixes:
+    Document clearly: Softmax.derivative() returns a Jacobian.
+    Consider a batched=True/False flag.
+    Alternatively, return only the diagonal for simplicity (approximate) if consistency is more important than precision.
 
-class Softmax(ActivationFunction):
+TODO Incorrect derivative of Softmax for training use:
+    In cross-entropy + softmax combinations, you're typically supposed to avoid computing the Jacobian manually.
+    If you're using cross-entropy loss with Softmax, the gradient simplifies greatly:
+    softmax_output - one_hot_labels
+    So you don't need the Jacobian unless you're computing pure Softmax derivatives without a loss function.
+    Suggestion: Include a note in the docstring or code to clarify that Softmax().derivative() is not typically used directly during backprop.
+'''
+class Softmax(ActivationFunction): 
     def __call__(self, x: Vector) -> Vector:
         # Subtract max for numerical stability
         e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))

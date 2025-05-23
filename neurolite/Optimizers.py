@@ -1,29 +1,61 @@
-from ninc.Neural_Network import Layer
+from neurolite.Neural_Network import Layer
 import logging
 import numpy as np
 from abc import ABC, abstractmethod
 
 class Optimizer(ABC):
     @abstractmethod
-    def update(self, layer: Layer, learning_rate: float) -> None:
+    def update(self, 
+               layer: Layer, 
+               learning_rate: float) -> None:
+        
         raise NotImplementedError("This method should be implemented by subclasses!")
+
+    def _validate_layer(self, 
+                        layer: Layer) -> None:
+        
+        if np.any(np.isnan(layer.weights)):
+            raise ValueError("Weights exploded to NaN. Reduce learning rate.")
+
+        if layer.weights is None or layer.bias is None:
+            raise ValueError("Weights and bias must be initialized before optimization.")
+
+        if not hasattr(layer, "gradient") or layer.gradient is None:
+            logging.error("Layer must have a gradient attribute. Maybe it was not calculated?")
+            raise AttributeError("Layer must have a gradient attribute. Maybe it was not calculated?")
+        
+        if not isinstance(layer.gradient, np.ndarray):
+            raise TypeError("Expected gradient to be a NumPy array.")
+        
+        if not hasattr(layer, "deltas") or layer.deltas is None:
+            logging.error("Layer must have deltas attribute.")
+            raise AttributeError("Layer must have deltas attribute.")
+
+
+    def _update_bias(self, 
+                     layer: Layer, 
+                     update: np.ndarray) -> None:
+        
+        if layer.deltas is not None:
+            if update.shape == layer.bias.shape:
+                layer.bias += update
+            else:
+                logging.warning(f"Layer {layer.idx} bias shape {layer.bias.shape} does not align with update shape {update.shape}")
+        else:
+            logging.warning(f"Layer {layer.idx} has no deltas — skipping bias update.")
+
 
 
 class SGD(Optimizer):
     def update(self,
                layer: Layer,
                learning_rate: float) -> None:
-        
-        if not hasattr(layer, "gradient") or layer.gradient is None:
-            logging.error("Layer must have a gradient attribute. Maybe it was not calculated?")
-            raise AttributeError("Layer must have a gradient attribute. Maybe it was not calculated?")
-        
-        if not hasattr(layer, "weights") or layer.weights is None:
-            logging.error("Layer must have a weights attribute. Maybe it was not initialized?")
-            raise AttributeError("Layer must have a weights attribute. Maybe it was not initialized?")
+               
+        self._validate_layer(layer)
         
         layer.weights -= learning_rate * layer.gradient
-        layer.bias -= learning_rate * layer.deltas
+        self._update_bias(layer, -1 * learning_rate * layer.deltas)
+        
 
 
 class PolyakMomentum(Optimizer):
@@ -34,55 +66,63 @@ class PolyakMomentum(Optimizer):
                layer: Layer,
                learning_rate: float) -> None:
         
+        self._validate_layer(layer)
+        
         if not hasattr(layer, 'velocity_weights'):
             layer.velocity_weights = np.zeros_like(layer.weights)
-
         if not hasattr(layer, 'velocity_bias'):
             layer.velocity_bias = np.zeros_like(layer.bias)
 
-        if layer.gradient is None or layer.deltas is None:
-            logging.error("Layer must have gradient and deltas for PolyakMomentum update.")
-            raise AttributeError("Layer must have gradient and deltas for PolyakMomentum update.")
-        
+
         # Update velocities
         layer.velocity_weights = self.momentum * layer.velocity_weights - learning_rate * layer.gradient
         layer.velocity_bias = self.momentum * layer.velocity_bias - learning_rate * layer.deltas
 
         # Update weights and biases
         layer.weights += layer.velocity_weights
-        layer.bias += layer.velocity_bias
+        self._update_bias(layer, layer.velocity_bias)
+
+        
 
 
 class RMSProp(Optimizer):
     def __init__(self,
                  beta: float = 0.9,
-                 epsilon: float = 1e-8):
+                 epsilon: float = 1e-8) -> None:
 
         self.beta = beta
         self.epsilon = epsilon
 
-    def update(self, layer: Layer, learning_rate: float) -> None:
+    def update(self, 
+               layer: Layer, 
+               learning_rate: float) -> None:
+    
+        self._validate_layer(layer)
+        
         if not hasattr(layer, 'v_weights'):
             layer.v_weights = np.zeros_like(layer.weights)
-
         if not hasattr(layer, 'v_bias'):
             layer.v_bias = np.zeros_like(layer.bias)
 
-        if layer.gradient is None or layer.deltas is None:
-            logging.error("Layer must have gradient and deltas for RMSProp update.")
-            raise AttributeError("Layer must have gradient and deltas for RMSProp update.")
-        
+
         # Update squared gradient estimates
         layer.v_weights = self.beta * layer.v_weights + (1 - self.beta) * (layer.gradient ** 2)
         layer.v_bias = self.beta * layer.v_bias + (1 - self.beta) * (layer.deltas ** 2)
 
         # Update weights and biases
         layer.weights -= learning_rate * layer.gradient / (np.sqrt(layer.v_weights) + self.epsilon)
-        layer.bias -= learning_rate * layer.deltas / (np.sqrt(layer.v_bias) + self.epsilon)
+
+        self._update_bias(layer, -1 * learning_rate * layer.deltas / (np.sqrt(layer.v_bias) + self.epsilon))
+
+        
 
 
 class Adam(Optimizer):
-    def __init__(self, beta1: float = 0.9, beta2: float = 0.999, epsilon: float = 1e-8):
+    def __init__(self, 
+                 beta1: float = 0.9, 
+                 beta2: float = 0.999, 
+                 epsilon: float = 1e-8) -> None:
+        
         self.beta1 = beta1
         self.beta2 = beta2
         self.epsilon = epsilon
@@ -90,19 +130,17 @@ class Adam(Optimizer):
 
     def update(self, layer: Layer, 
                learning_rate: float) -> None:
-        
+    
+        self._validate_layer(layer)
+
         if not hasattr(layer, 'm_weights'):
             layer.m_weights = np.zeros_like(layer.weights)
             layer.v_weights = np.zeros_like(layer.weights)
             layer.m_bias = np.zeros_like(layer.bias)
             layer.v_bias = np.zeros_like(layer.bias)
-            layer.t_adam = 0
+            logging.debug(f"Adding Adam m_weights to layer: {layer.idx}")
 
-        if layer.gradient is None or layer.deltas is None:
-            logging.error("Layer must have gradient and deltas for Adam update.")
-            raise AttributeError("Layer must have gradient and deltas for Adam update.")
         
-        layer.t_adam += 1
         self.t += 1
 
         # Update moments for weights
@@ -114,11 +152,11 @@ class Adam(Optimizer):
         layer.v_bias = self.beta2 * layer.v_bias + (1 - self.beta2) * (layer.deltas ** 2)
 
         # Compute bias-corrected moments
-        m_hat_weights = layer.m_weights / (1 - self.beta1 ** layer.t_adam)
-        v_hat_weights = layer.v_weights / (1 - self.beta2 ** layer.t_adam)
-        m_hat_bias = layer.m_bias / (1 - self.beta1 ** layer.t_adam)
-        v_hat_bias = layer.v_bias / (1 - self.beta2 ** layer.t_adam)
+        m_hat_weights = layer.m_weights / (1 - self.beta1 ** self.t)
+        v_hat_weights = layer.v_weights / (1 - self.beta2 ** self.t)
+        m_hat_bias = layer.m_bias / (1 - self.beta1 ** self.t)
+        v_hat_bias = layer.v_bias / (1 - self.beta2 ** self.t)
 
-        # Update weights and biases
+        # Update weights 
         layer.weights -= learning_rate * m_hat_weights / (np.sqrt(v_hat_weights) + self.epsilon)
-        layer.bias -= learning_rate * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon)
+        self._update_bias(layer, -1 * learning_rate * m_hat_bias / (np.sqrt(v_hat_bias) + self.epsilon))

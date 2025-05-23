@@ -1,8 +1,10 @@
 # Imports
-from ninc.Util import *
-from ninc.DataHandling import Dataset
-from ninc.Activation import activation
-from ninc.Cost import cost
+from neurolite.Util import Vector, Matrix, is_vector, is_matrix
+from neurolite.DataHandling import Dataset
+from neurolite.Activation import activation
+from neurolite.Cost import cost
+import logging
+import numpy as np
 
 class NeuralNetwork:
     """
@@ -17,9 +19,14 @@ class NeuralNetwork:
         Initialize the neural network with a dataset, list of layers, and loss function.
         Ensures all layers are properly initialized and weight dimensions match.
         """
+
+        assert hasattr(dataset, "training"), "Dataset must be splited and not empty before nn initialization"
+
         self.layers: list[Layer] = layers
         self.loss_func: str = loss_func
         self.dataset: Dataset = dataset
+        self.input_size = self.dataset.training.features[0].shape[0]
+
 
         for idx, layer in enumerate(self.layers):
             layer.parent_nn = self
@@ -41,13 +48,23 @@ class NeuralNetwork:
         """
         logging.debug(f"Forwarding with inputs: {inputs}")
         try:
+            x = inputs.copy()
             for layer in self.layers:
-                inputs = layer.forward_pass(inputs)
-            return inputs
+                x = layer.forward_pass(x)
+            return x
+        
         except Exception as e:
             logging.error(f"Error during forward propagation: {e}")
             raise
     
+    '''
+    TODO The propagate_backward() method assumes last layer always has activation and cost
+        output_layer.deltas = cost(...) * activation(...)
+        This assumes:
+            Activation derivative exists for last layer.
+            Cost + activation combo is valid (e.g., MSE + sigmoid may be inefficient).
+        Improvement: Add logic to handle softmax + cross-entropy combined derivative as a special case, or allow user-defined derivative computation for output layers.
+    '''
     def propagate_backward(self, 
                            expected: Vector):
         """
@@ -169,7 +186,7 @@ class Layer:
         self.a: Vector
         self.deltas: Vector
         self.gradient: Matrix 
-        self.inputs = Vector
+        self.inputs: Vector
         self.num_of_units = num_of_units
         self.initialization_mode = initialization_mode
         self.weights: Matrix = None
@@ -181,11 +198,14 @@ class Layer:
         self.clipping = clipping
         self.clip_size = clip_size
 
+    #TODO Create a module for a class based implementation of weight initialization
     def initialize_weights(self, mode: str = "Xavier"):
         """
         Initialize the weights and biases for this layer using the specified mode.
         Supported modes: Xavier, XavierNormal, He, HeNormal.
         """
+        assert len(self.parent_nn.dataset.training.features) > 0, "Training data is empty"
+        
         if self.idx == 0:
             sample_input = self.parent_nn.dataset.training.features[0]
             n_in = sample_input.shape[0]
@@ -271,5 +291,8 @@ class Layer:
 
         # Gradient is the outer product of deltas and inputs
         self.gradient = np.outer(self.deltas, self.inputs)
+        if self.clipping:
+            np.clip(self.gradient, -self.clip_size, self.clip_size, out=self.gradient)
+
         return self.gradient
     

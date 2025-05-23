@@ -1,7 +1,7 @@
-from ninc.Neural_Network import *
-from ninc.DataHandling import Dataset
-from ninc.Optimizers import Optimizer
-from ninc.Cost import cost
+from neurolite.Neural_Network import *
+from neurolite.DataHandling import Dataset
+from neurolite.Optimizers import Optimizer
+from neurolite.Cost import cost
 
 class Trainer:
     def __init__(self,
@@ -24,16 +24,20 @@ class Trainer:
         self.patience = patience
         self.min_delta = min_delta
         self._best_val_loss = float('inf')
-        self._epochs_no_improve = 0
+        self._validations_no_improve = 0
         self._best_weights = None
 
     def train(self,
               batched: bool = True,
               batch_size: int = 32,
               shuffle: bool = True) -> None:
+        
+        if self.dataset is None:
+            raise ValueError("NeuralNetwork object must have a dataset assigned.")
 
         if batched and not self.dataset.batches:
-            self.dataset.split_batches(batch_size, shuffle)
+            raise RuntimeError("Batches not created. Check batch size or call split_batches() before training.")
+
 
         for epoch in range(self.epochs):
             if batched:
@@ -74,12 +78,17 @@ class Trainer:
     def validate(self, 
                  return_loss=False) -> None:
         
-        if not hasattr(self.dataset, "validation"):
+        if not hasattr(self.dataset, "validation") or self.dataset.validation is None:
             raise RuntimeError("Validation dataset is not available.")
+        
+
         
         features = self.dataset.validation.features
         labels = self.dataset.validation.labels
-        total_loss = 0
+        total_loss = 0\
+        
+        if len(features) == 0:
+            raise ValueError("Validation dataset is empty.")
 
         for feature, label in zip(features, labels):
             predictions = self.nn.propagate_forward(feature)
@@ -95,12 +104,25 @@ class Trainer:
                     features: Vector,
                     labels: Vector) -> None:
         
+        logging.debug(f"Train step: features shape ({features.shape}), labels shape ({labels.shape})")
+        
         for feature, label, in zip(features, labels):
+            if feature.shape[0] != self.nn.input_size:
+                raise ValueError(f"Feature size mismatch: expected {self.nn.input_size}, got {feature.shape[0]}")
+            
             try:
-                self.nn.propagate_forward(feature)
+                out = self.nn.propagate_forward(feature)
+                logging.debug(f"Train step: Out shape ({out.shape})")
                 self.nn.propagate_backward(label)
 
                 for layer in self.nn.layers:
+                    if not hasattr(layer, "weights") or not hasattr(layer, "bias"):
+                        raise AttributeError("Layer missing weights or bias attributes.")
+
+                    if np.isnan(layer.weights).any():
+                        raise FloatingPointError("NaNs detected in weights. Try lowering learning rate or using better initialization.")
+
+
                     self.optimizer.update(layer, self.learning_rate)
                     logging.debug(f"Updated layer {layer.idx} with weights: {layer.weights}")
 

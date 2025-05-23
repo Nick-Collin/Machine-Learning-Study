@@ -5,36 +5,75 @@ import logging
 # Converts a DataFrame to a Data object, extracting features and labels, with optional one-hot encoding
 def to_data(df: pd.DataFrame, 
             label_column: str = "label", 
-            one_hot: bool = False):
-    
+            one_hot: bool = False) -> "Data":
+    # Input validation
+    if not isinstance(df, pd.DataFrame):
+        logging.error("Input must be a pandas DataFrame")
+        raise TypeError("Input must be a pandas DataFrame")
+        
     if df.empty:
-        logging.error("Input DataFrame is empty in to_data().")
-        raise ValueError("Input DataFrame is empty.")
-    
-    # If label_column is a list (one-hot), drop all those columns from features and use them as labels
+        logging.error("Input DataFrame is empty in to_data()")
+        raise ValueError("Input DataFrame is empty")
+
     try:
+        # Validate label columns exist
         if isinstance(label_column, list):
-            features = df.drop(columns=label_column).to_numpy()
-            labels = df[label_column].to_numpy()
-
+            missing = [col for col in label_column if col not in df.columns]
+            if missing:
+                raise ValueError(f"Label columns {missing} not found in DataFrame")
+            if len(label_column) == 0:
+                raise ValueError("Empty label_column list provided")
         else:
-            features = df.drop(columns=[label_column]).to_numpy()
+            if label_column not in df.columns:
+                raise ValueError(f"Label column '{label_column}' not found in DataFrame")
 
+        # Feature extraction
+        if isinstance(label_column, list):
+            features = df.drop(columns=label_column)
+            if features.shape[1] == 0:
+                raise ValueError("No features remaining after dropping label columns")
+        else:
+            features = df.drop(columns=[label_column])
+            if features.shape[1] == 0:
+                raise ValueError(f"No features remaining after dropping '{label_column}'")
+
+        features = features.to_numpy()
+        
+        # Label processing
+        if isinstance(label_column, list):
+            labels = df[label_column].to_numpy()
+        else:
             if one_hot:
                 labels = pd.get_dummies(df[label_column]).to_numpy()
-
+                if labels.shape[1] == 0:
+                    raise ValueError("One-hot encoding resulted in empty labels")
             else:
                 labels = df[label_column].to_numpy()
+                # Ensure 2D shape even for single-column outputs
+                labels = labels.reshape(-1, 1)
 
-        if features.size == 0 or labels.size == 0:
-            logging.error("Features or labels are empty after processing in to_data().")
-            raise ValueError("Features or labels are empty after processing.")
-        
+        # Final validation
+        if features.size == 0:
+            raise ValueError("Features array is empty after processing")
+        if labels.size == 0:
+            raise ValueError("Labels array is empty after processing")
+        if len(features) != len(labels):
+            raise ValueError(f"Mismatched samples: features({len(features)}), labels({len(labels)})")
+
         return Data(features, labels)
-    
-    except Exception as e:
-        logging.error(f"Error in to_data: {e}")
+
+    except KeyError as ke:
+        logging.error(f"Column error in to_data: {str(ke)}")
+        raise ValueError(f"Missing column: {str(ke)}") from ke
+    except ValueError as ve:
+        logging.error(f"Value error in to_data: {str(ve)}")
         raise
+    except TypeError as te:
+        logging.error(f"Type error in to_data: {str(te)}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error in to_data: {str(e)}")
+        raise RuntimeError(f"Failed to convert DataFrame to Data object: {str(e)}") from e
 
 # Simple container for features and labels
 class Data:
@@ -78,16 +117,19 @@ split_ratio: Ratio):
 
     # Loads data from a CSV or Excel file
     def load(self):
-        if self.path.endswith(".csv"):
-            self.data = pd.read_csv(self.path)
+        try:
+            if self.path.endswith(".csv"):
+                self.data = pd.read_csv(self.path)
+            elif self.path.endswith(".xlsx"):
+                self.data = pd.read_excel(self.path)
+            else:
+                raise ValueError("Unsupported file format.")
+        except Exception as e:
+            logging.error(f"Failed to load data: {e}")
+            raise
 
-        elif self.path.endswith(".xlsx"):
-            self.data = pd.read_excel(self.path)
 
-        else:
-            raise ValueError("Unsupported file format. Please provide a .csv or .xlsx file.")
-
-        logging.info(f"Loading data from {self.path}")
+        logging.info(f"Loaded data from {self.path}")
         logging.debug(f"Data preview: {self.data.head()}" if hasattr(self, 'data') else "Data not loaded yet.")
 
     # Splits the loaded data into training, validation, and testing sets
@@ -134,8 +176,9 @@ split_ratio: Ratio):
         logging.debug(f"Total samples: {total_samples}, Training samples: {train_end}, Validation samples: {val_end - train_end}, Testing samples: {total_samples - val_end}")
 
     # Splits the training data into batches of a given size
-    def split_batches(self, batch_size: int, 
-                    shuffle: bool = True) -> list[Data]:
+    def split_batches(self, 
+                      batch_size: int = 32, 
+                      shuffle: bool = True) -> list[Data]:
         
         if not hasattr(self, 'training') or self.training is None:
             logging.error("Training data is not set before calling split_batches.")
@@ -242,6 +285,7 @@ split_ratio: Ratio):
                     fill_value = df[col].mode()[0]
                 elif strategy == "drop":
                     df.dropna(subset=[col], inplace=True)
+                    self.data = df.reset_index(drop=True)
                 else:
                     raise ValueError(f"Invalid strategy: {strategy}")
                 
@@ -252,5 +296,4 @@ split_ratio: Ratio):
                 logging.error(f"Error handling missing data for column '{col}': {e}")
                 raise
 
-        self.data = df
         logging.info(f"Handled missing data in columns: {columns}")
